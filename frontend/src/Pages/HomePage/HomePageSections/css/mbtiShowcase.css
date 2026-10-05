@@ -1,0 +1,162 @@
+/* ---------- MBTI showcase: pinned poster that swaps per personality as you scroll ---------- */
+.mbti {
+  position: relative;
+  height: 900vh; /* scroll distance: 16 personalities */
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  width: 100%;
+  color: var(--mbti-ink);
+}
+
+.mbti *,
+.mbti *::before,
+.mbti *::after {
+  box-sizing: border-box;
+}
+
+.mbti__stage {
+  --mbti-ink: #0a0a0a;
+  --mbti-ring: min(66vmin, 520px);
+  --mbti-rest: calc(50vw - var(--mbti-ring) / 2 - 6vw);
+
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: #d9c8f0;
+  color: var(--mbti-ink);
+}
+
+/* Two stacked poster layers; a clockwise conic mask swaps one for the other */
+.mbti__ly {
+  --dk: #4b3578;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.mbti__ly--b {
+  visibility: hidden;
+}
+
+.mbti__tl,
+.mbti__tr,
+.mbti__bl,
+.mbti__br {
+  position: absolute;
+}
+
+.mbti__ly p {
+  margin: 0;
+  font-size: clamp(12px, 1.05vw, 15px);
+  line-height: 1.5;
+  color: var(--mbti-ink);
+}
+
+.mbti__tl { top: 5vh; left: 3vw; max-width: 30ch; }
+.mbti__tr { top: 6vh; right: 3vw; max-width: 32ch; text-align: right; }
+.mbti__bl { bottom: 7vh; left: 3vw; max-width: 32ch; }
+.mbti__br { bottom: 3vh; right: 3vw; text-align: right; }
+.mbti__br p { margin: 0 0 10px auto; max-width: 36ch; }
+
+.mbti__code {
+  display: inline-block;
+  margin: 0 0 16px;
+  font-weight: 900;
+  font-size: clamp(56px, 9.5vw, 136px);
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--dk);
+}
+
+.mbti__nm {
+  font-weight: 900;
+  font-size: clamp(36px, 6.4vw, 96px);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  color: var(--dk);
+}
+
+/* Ring + character */
+.mbti__ringbox {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  width: var(--mbti-ring);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+
+.mbti__ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mbti__ring g {
+  transform-origin: 200px 200px;
+}
+
+.mbti__disc {
+  position: absolute;
+  inset: 8.5%;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.mbti__disc svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mbti__disc:focus-visible {
+  outline: 3px solid #1f77c9;
+  outline-offset: 4px;
+}
+
+.mb-part {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mb-arm { transform-origin: 126px 92px; }
+.mb-head { transform-origin: 100px 80px; }
+
+/* The two middle lines: one diameter that rotates clockwise with the ring */
+.mbti__diam {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.mbti__diam i {
+  position: absolute;
+  top: -1px;
+  height: 2px;
+  background: var(--mbti-ink);
+  width: calc(var(--mbti-rest) + var(--ext, 0) * 130vmax);
+}
+
+.mbti__diam-r { left: calc(var(--mbti-ring) / 2 + 3vw); }
+.mbti__diam-l { right: calc(var(--mbti-ring) / 2 + 3vw); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .mbti__stage { --mbti-ring: min(64vw, 46vh); }
+  .mbti__ly p { font-size: 12px; }
+  .mbti__tl, .mbti__tr, .mbti__bl { max-width: 44vw; }
+  .mbti__tl { top: 3vh; left: 4vw; }
+  .mbti__tr { top: 3vh; right: 4vw; }
+  .mbti__bl { left: 4vw; bottom: 15vh; }
+  .mbti__br { right: 4vw; bottom: 2vh; }
+  .mbti__br p { max-width: 44vw; }
+  .mbti__code { font-size: clamp(44px, 14vw, 80px); }
+  .mbti__nm { font-size: 11vw; }
+}

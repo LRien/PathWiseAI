@@ -1,0 +1,194 @@
+
+.ha {
+  --bg: #f5efe4;
+  --ink: #0a0a0a;
+  --muted: #2b2a27;
+  --navy: #020530;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 80px;
+}
+.ha *,
+.ha *::before,
+.ha *::after {
+  box-sizing: border-box;
+}
+
+.ha-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-left: clamp(20px, 5vw, 56px);
+  padding-right: clamp(20px, 5vw, 56px);
+}
+
+.ha-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  margin: 0 0 16px;
+}
+.ha-body {
+  max-width: 62ch;
+  font-size: clamp(14px, 1.2vw, 16px);
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+/* ---------- Intro ---------- */
+.ha-intro {
+  padding-top: clamp(48px, 12vh, 120px);
+  padding-bottom: clamp(40px, 8vh, 96px);
+}
+.ha-intro h1 {
+  font-weight: 900;
+  font-size: clamp(36px, 5.6vw, 76px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  margin: 0 0 28px;
+  max-width: 14ch;
+}
+.ha-fade {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: haFadeUp 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(var(--i) * 140ms + 100ms);
+}
+@keyframes haFadeUp {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Spotlight ---------- */
+.ha-spot {
+  padding-top: clamp(40px, 8vh, 96px);
+  padding-bottom: clamp(40px, 8vh, 96px);
+}
+.ha-lead {
+  margin-bottom: clamp(40px, 8vh, 80px);
+}
+.ha-statement {
+  font-weight: 900;
+  font-size: clamp(32px, 6vw, 80px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0;
+  max-width: 18ch;
+}
+.ha-statement span {
+  color: rgba(10, 10, 10, 0.14);
+  transition: color 0.35s ease;
+}
+.ha-statement span.lit {
+  color: var(--ink);
+}
+
+/* ---------- Four factors ---------- */
+.ha-cards {
+  padding-top: clamp(24px, 6vh, 64px);
+  padding-bottom: clamp(40px, 8vh, 96px);
+}
+.ha-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+.ha-card {
+  background: #fff;
+  border-radius: 24px;
+  border-top: 8px solid var(--dk);
+  padding: 28px 28px 32px;
+  min-height: 200px;
+  opacity: 0;
+  transform: translateY(24px) scale(0.92);
+  transition: opacity 0.5s, transform 0.7s cubic-bezier(0.2, 1.4, 0.4, 1);
+  transition-delay: calc(var(--i) * 120ms + 150ms);
+}
+.ha-cards.in .ha-card {
+  opacity: 1;
+  transform: none;
+}
+.ha-num {
+  display: block;
+  font-weight: 900;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--dk);
+  margin-bottom: 18px;
+}
+.ha-card h3 {
+  font-size: clamp(18px, 1.8vw, 24px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  margin: 0 0 8px;
+}
+.ha-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* ---------- Purpose ---------- */
+.ha-purpose-wrap {
+  padding-top: 24px;
+}
+.ha-purpose {
+  background: var(--navy);
+  color: #fff;
+  border-radius: 24px;
+  padding: clamp(32px, 6vw, 72px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(60px);
+  transition: opacity 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.2s,
+    transform 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.2s;
+}
+.ha-purpose.in {
+  opacity: 1;
+  transform: none;
+}
+.ha-purpose-main {
+  font-weight: 600;
+  font-size: clamp(18px, 2.2vw, 28px);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  max-width: 34ch;
+  margin: 0 0 28px;
+}
+.ha-purpose-note {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 60ch;
+  margin: 0;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 760px) {
+  .ha-grid {
+    grid-template-columns: 1fr;
+  }
+  .ha-card {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ha-fade,
+  .ha-card,
+  .ha-purpose,
+  .ha-statement span {
+    animation: none;
+    transition: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
