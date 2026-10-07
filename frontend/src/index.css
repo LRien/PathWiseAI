@@ -4,15 +4,21 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep the site light on every device, even if the phone is in dark mode */
+:root {
+  color-scheme: light;
+}
+
 body{
   background-color: #F2E7D4;
+  color: #0a0a0a;
 }
 
 
 
 ::-webkit-scrollbar {display:none;}
 
-/* ---------- Tokens (light by default, follows the system in dark mode) ---------- */
+/* ---------- Tokens (always light) ---------- */
 .navbar {
   --nav-ink: #0a0a0a;
   --nav-btn: #05052e;
@@ -36,16 +42,6 @@ body{
   -webkit-font-smoothing: antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  .navbar {
-    --nav-ink: #f5efe4;
-    --nav-btn: #f5efe4;
-    --nav-btn-ink: #05052e;
-    --nav-btn-alt: #2c2822;
-    --nav-btn-alt-ink: #f5efe4;
-    --nav-panel: rgba(255, 255, 255, 0.1);
-  }
-}
 .navbar--hidden {
   transform: translateY(-100%);
 }
@@ -275,15 +271,6 @@ body{
   padding: 0 clamp(20px, 5vw, 56px) 48px;
   font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
   color: var(--hero-ink);
-}
-
-@media (prefers-color-scheme: dark) {
-  .hero {
-    --hero-ink: #f5efe4;
-    --hero-muted: #d8d1c3;
-    --hero-btn: #f5efe4;
-    --hero-btn-ink: #05052e;
-  }
 }
 
 .hero *,

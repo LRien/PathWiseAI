@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import './css/mbtiShowcase.css'
 
 /* ---------- Data: 16 low-poly adventurers drawn in pure SVG (no image files, no animation library) ---------- */
@@ -31,6 +31,7 @@ const TEXT_STAGGER = 40 // ms between each text block leaving
 const WIPE_MS = 1400 // the spin / wipe itself
 const FAST_MS = 650 // wipe speed when the user is scrolling fast and personalities are queued up
 const IDLE_WAVE_MS = 1100 // stay this long without scrolling and the strands swell and the dots ripple
+const MOBILE_Q = '(max-width: 767px)' // at or below this width, tapping a character does not replay its emote
 const TAU = Math.PI * 2
 
 const polar = (deg) => {
@@ -444,6 +445,18 @@ const grow = (p, n) => {
 const cen = (p) => [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length]
 
 const MbtiShowCase = () => {
+  /* true on phones / narrow screens: tapping the character does nothing there, so it can never get in the way of scrolling */
+  const [mobile, setMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_Q).matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_Q)
+    const on = (e) => setMobile(e.matches)
+    setMobile(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+
   const secRef = useRef(null)
   const stageRef = useRef(null)
   const lyA = useRef(null)
@@ -603,7 +616,11 @@ const MbtiShowCase = () => {
       emoteT = setTimeout(() => playEmote(i), delay)
     }
 
-    emoteRef.current = () => { if (shown >= 0 && !busy) playEmote(shown) }
+    /* tap / click / Enter on the character replays its emote (desktop only: on mobile it is ignored) */
+    emoteRef.current = () => {
+      if (matchMedia(MOBILE_Q).matches) return
+      if (shown >= 0 && !busy) playEmote(shown)
+    }
 
     /* ---------- morph ---------- */
     function prep(a, b) {
@@ -924,15 +941,20 @@ const MbtiShowCase = () => {
               <circle className="mbti__knob" cx="200" cy="15" r="15" />
             </g>
           </svg>
+          {/* On mobile the character is not tappable (pointer-events off), so touches pass through and never interfere with scrolling */}
           <div
             className="mbti__disc"
-            tabIndex={0}
-            role="button"
-            aria-label="INTJ Architect, activate to replay its emote"
-            onClick={() => emoteRef.current()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); emoteRef.current() }
-            }}
+            {...(mobile
+              ? { style: { pointerEvents: 'none' } }
+              : {
+                  tabIndex: 0,
+                  role: 'button',
+                  'aria-label': 'INTJ Architect, activate to replay its emote',
+                  onClick: () => emoteRef.current(),
+                  onKeyDown: (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); emoteRef.current() }
+                  },
+                })}
           >
             <svg ref={charRef} viewBox="0 0 200 200" aria-hidden="true" />
           </div>

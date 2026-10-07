@@ -68,8 +68,6 @@ const HeroAbout = () => {
     <div className="ha">
       {/* ---------- Intro (plays on load) ---------- */}
       <section className="ha-wrap ha-intro">
-        <p className="ha-eyebrow ha-fade" style={{ '--i': 0 }}>ABOUT</p>
-
         <h1 className="ha-fade" style={{ '--i': 1 }}>
           Connecting Personality to Career Exploration
         </h1>
@@ -93,8 +91,8 @@ const HeroAbout = () => {
 
       {/* ---------- Role of personality + spotlight ---------- */}
       <section className="ha-wrap ha-spot">
-        <p className="ha-eyebrow">THE ROLE OF PERSONALITY</p>
-        <p className="ha-body ha-lead">
+        <h2 className="ha-lead">THE ROLE OF PERSONALITY</h2>
+        <p className="ha-body">
           Personality can provide insight into a person&apos;s preferred ways of
           approaching tasks, solving problems, communicating, and working with
           others. Career Match uses the Myers-Briggs Type Indicator (MBTI) as one

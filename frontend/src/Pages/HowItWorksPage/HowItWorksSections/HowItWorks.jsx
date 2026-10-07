@@ -64,6 +64,8 @@ const STEPS = [
 
 /* ---------- Path: right-angle turns through five nodes ---------- */
 const NP = [[35, 45], [80, 150], [35, 255], [80, 360], [35, 455]]
+const NODE_R = 17 // node radius (was 13)
+const LABEL_GAP = 27 // distance from the node centre to its label (was 19), keeps the label clear of the circle
 
 const buildPath = () => {
   let d = `M${NP[0][0]} ${NP[0][1]}`
@@ -214,14 +216,15 @@ const HowItWorks = () => {
         <div className="hiw-journey">
           <aside className="hiw-rail">
             <div className="hiw-path">
-              <svg viewBox={mobile ? '15 0 80 500' : '0 0 140 500'} preserveAspectRatio="xMidYMid meet">
+              {/* wider viewBox on desktop so the bigger labels are not cut off, tighter on mobile (labels hidden) */}
+              <svg viewBox={mobile ? '8 0 100 500' : '6 0 190 500'} preserveAspectRatio="xMidYMid meet">
                 <defs>
-                  <mask id="hiw-mask" maskUnits="userSpaceOnUse" x="-20" y="0" width="200" height="500">
+                  <mask id="hiw-mask" maskUnits="userSpaceOnUse" x="-20" y="0" width="240" height="500">
                     <path
                       d={PATH_D}
                       fill="none"
                       stroke="#fff"
-                      strokeWidth="12"
+                      strokeWidth="14"
                       strokeLinejoin="miter"
                       pathLength="100"
                       strokeDasharray="100"
@@ -229,8 +232,8 @@ const HowItWorks = () => {
                     />
                   </mask>
                 </defs>
-                <path d={PATH_D} fill="none" stroke="#0a0a0a" strokeWidth="3" strokeDasharray="7 6" strokeLinejoin="miter" opacity=".25" />
-                <path d={PATH_D} fill="none" stroke="#0a0a0a" strokeWidth="3" strokeDasharray="7 6" strokeLinejoin="miter" mask="url(#hiw-mask)" />
+                <path d={PATH_D} fill="none" stroke="#0a0a0a" strokeWidth="4" strokeDasharray="9 7" strokeLinejoin="miter" opacity=".25" />
+                <path d={PATH_D} fill="none" stroke="#0a0a0a" strokeWidth="4" strokeDasharray="9 7" strokeLinejoin="miter" mask="url(#hiw-mask)" />
                 <g>
                   {NP.map((p, k) => {
                     const cls = `hiw-node${progress >= F[k] - 0.001 && k <= active ? ' done' : ''}${k === active ? ' act' : ''}`
@@ -249,9 +252,9 @@ const HowItWorks = () => {
                           }
                         }}
                       >
-                        <circle cx={p[0]} cy={p[1]} r="13" />
+                        <circle cx={p[0]} cy={p[1]} r={NODE_R} />
                         <text className="n" x={p[0]} y={p[1]}>{k + 1}</text>
-                        <text className="lb" x={p[0] + 19} y={p[1]}>{STEPS[k].n}</text>
+                        <text className="lb" x={p[0] + LABEL_GAP} y={p[1]}>{STEPS[k].n}</text>
                       </g>
                     )
                   })}

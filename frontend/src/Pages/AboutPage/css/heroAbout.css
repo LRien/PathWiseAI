@@ -1,14 +1,24 @@
-
 .ha {
-  --bg: #f5efe4;
   --ink: #0a0a0a;
   --muted: #2b2a27;
-  --navy: #020530;
+  --navy: #1b2558;
+  --title: clamp(36px, 5.6vw, 76px);
+
+  /* spacing scale: change these to tune the whole page */
+  --gap-section: clamp(80px, 13vh, 150px); /* between every section */
+  --gap-heading: clamp(24px, 3.5vh, 36px); /* heading -> its text */
+  --gap-block: clamp(48px, 8vh, 88px);     /* text -> card */
+
   background: var(--bg);
   color: var(--ink);
   font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  padding-bottom: 80px;
+
+  /* one gap controls the space between ALL sections */
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+  padding-bottom: var(--gap-section);
 }
 .ha *,
 .ha *::before,
@@ -16,9 +26,12 @@
   box-sizing: border-box;
 }
 
-.ha-wrap {
-  max-width: 1100px;
-  margin: 0 auto;
+/* sections never add their own vertical space */
+.ha > section {
+  width: 100%;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
   padding-left: clamp(20px, 5vw, 56px);
   padding-right: clamp(20px, 5vw, 56px);
 }
@@ -27,7 +40,7 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.12em;
-  margin: 0 0 16px;
+  margin: 0 0 24px;
 }
 .ha-body {
   max-width: 62ch;
@@ -36,18 +49,20 @@
   color: var(--muted);
   margin: 0 0 16px;
 }
+.ha-body:last-child {
+  margin-bottom: 0;
+}
 
 /* ---------- Intro ---------- */
-.ha-intro {
-  padding-top: clamp(48px, 12vh, 120px);
-  padding-bottom: clamp(40px, 8vh, 96px);
+.ha > .ha-intro {
+  padding-top: clamp(48px, 10vh, 112px);
 }
-.ha-intro h1 {
+.ha .ha-intro h1 {
   font-weight: 900;
-  font-size: clamp(36px, 5.6vw, 76px);
+  font-size: var(--title);
   line-height: 1;
   letter-spacing: -0.03em;
-  margin: 0 0 28px;
+  margin: 0 0 var(--gap-heading);
   max-width: 14ch;
 }
 .ha-fade {
@@ -63,46 +78,53 @@
   }
 }
 
-/* ---------- Spotlight ---------- */
-.ha-spot {
-  padding-top: clamp(40px, 8vh, 96px);
-  padding-bottom: clamp(40px, 8vh, 96px);
-}
-.ha-lead {
-  margin-bottom: clamp(40px, 8vh, 80px);
-}
-.ha-statement {
-  font-weight: 900;
-  font-size: clamp(32px, 6vw, 80px);
+/* ---------- Role of personality + spotlight ---------- */
+.ha .ha-lead {
+  max-width: none;
+  font-weight: 800;
+  font-size: var(--title);
   line-height: 1.05;
   letter-spacing: -0.03em;
-  margin: 0;
-  max-width: 18ch;
+  color: var(--ink);
+  margin: 0 0 var(--gap-heading);
+}
+.ha .ha-spot .ha-body {
+  margin-bottom: 0;
+}
+
+.ha .ha-statement {
+  max-width: 950px;
+  margin: var(--gap-block) auto 0; /* space above only; section gap handles below */
+  padding: clamp(48px, 7vh, 72px) 44px;
+  border-radius: 14px;
+  background: var(--navy);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  font-weight: 700;
+  font-size: clamp(16px, 1.6vw, 20px);
+  line-height: 1.55;
+  letter-spacing: 0;
+  text-align: center;
 }
 .ha-statement span {
-  color: rgba(10, 10, 10, 0.14);
+  color: rgba(255, 255, 255, 0.3);
   transition: color 0.35s ease;
 }
 .ha-statement span.lit {
-  color: var(--ink);
+  color: #fff;
 }
 
 /* ---------- Four factors ---------- */
-.ha-cards {
-  padding-top: clamp(24px, 6vh, 64px);
-  padding-bottom: clamp(40px, 8vh, 96px);
-}
 .ha-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
+  gap: clamp(20px, 2.4vw, 32px);
 }
 .ha-card {
   background: #fff;
-  border-radius: 24px;
-  border-top: 8px solid var(--dk);
-  padding: 28px 28px 32px;
-  min-height: 200px;
+  border-radius: 28px;
+  border-top: 10px solid var(--dk);
+  padding: clamp(28px, 3.4vw, 48px);
+  min-height: 300px;
   opacity: 0;
   transform: translateY(24px) scale(0.92);
   transition: opacity 0.5s, transform 0.7s cubic-bezier(0.2, 1.4, 0.4, 1);
@@ -115,29 +137,27 @@
 .ha-num {
   display: block;
   font-weight: 900;
-  font-size: 40px;
+  font-size: clamp(44px, 5vw, 64px);
   line-height: 1;
   letter-spacing: -0.03em;
   color: var(--dk);
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 .ha-card h3 {
-  font-size: clamp(18px, 1.8vw, 24px);
+  font-size: clamp(24px, 2.6vw, 36px);
   font-weight: 900;
   letter-spacing: -0.02em;
-  margin: 0 0 8px;
+  line-height: 1.1;
+  margin: 0 0 12px;
 }
 .ha-card p {
   margin: 0;
-  font-size: 15px;
+  font-size: clamp(15px, 1.3vw, 18px);
   line-height: 1.55;
   color: var(--muted);
 }
 
 /* ---------- Purpose ---------- */
-.ha-purpose-wrap {
-  padding-top: 24px;
-}
 .ha-purpose {
   background: var(--navy);
   color: #fff;
@@ -173,11 +193,18 @@
 
 /* ---------- Mobile ---------- */
 @media (max-width: 760px) {
+  .ha {
+    --gap-section: 64px;
+    --gap-block: 40px;
+  }
   .ha-grid {
     grid-template-columns: 1fr;
   }
   .ha-card {
     min-height: 0;
+  }
+  .ha .ha-statement {
+    padding: 40px 22px;
   }
 }
 
