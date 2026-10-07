@@ -16,7 +16,7 @@
 .mbti__stage {
   --mbti-ink: #0a0a0a;
   --mbti-ring: min(66vmin, 520px);
-  --mbti-rest: calc(50vw - var(--mbti-ring) / 2 - 6vw);
+  --mbti-line: clamp(3px, 0.35vw, 5px); /* thickness of the wavy strands */
 
   position: sticky;
   top: 0;
@@ -76,7 +76,7 @@
   color: var(--dk);
 }
 
-/* Ring + character */
+/* ---------- Ring: 16 clickable segments that fill with scroll ---------- */
 .mbti__ringbox {
   position: absolute;
   left: 50%;
@@ -92,12 +92,64 @@
   inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none; /* only the segment hit areas take clicks */
 }
 
 .mbti__ring g {
   transform-origin: 200px 200px;
 }
 
+.mbti__seg {
+  outline: none;
+  cursor: pointer;
+}
+
+.mbti__seg-track,
+.mbti__seg-fill {
+  fill: none;
+  stroke-width: 14;
+  transition: stroke-width 0.2s ease, stroke 0.2s ease;
+}
+
+.mbti__seg-track {
+  stroke: rgba(10, 10, 10, 0.16);
+}
+
+.mbti__seg-fill {
+  stroke: var(--mbti-ink);
+  stroke-dasharray: 1;   /* pathLength is 1, so the offset is the unfilled fraction */
+  stroke-dashoffset: 1;
+}
+
+.mbti__seg-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 36;
+  pointer-events: stroke;
+}
+
+.mbti__seg:hover .mbti__seg-track {
+  stroke: rgba(10, 10, 10, 0.34);
+}
+
+.mbti__seg:hover .mbti__seg-track,
+.mbti__seg:hover .mbti__seg-fill,
+.mbti__seg.is-on .mbti__seg-track,
+.mbti__seg.is-on .mbti__seg-fill,
+.mbti__seg:focus-visible .mbti__seg-track,
+.mbti__seg:focus-visible .mbti__seg-fill {
+  stroke-width: 19;
+}
+
+.mbti__seg:focus-visible .mbti__seg-track {
+  stroke: #1f77c9;
+}
+
+.mbti__knob {
+  fill: var(--mbti-ink);
+}
+
+/* ---------- Character ---------- */
 .mbti__disc {
   position: absolute;
   inset: 8.5%;
@@ -122,10 +174,17 @@
   transform-origin: center;
 }
 
-.mb-arm { transform-origin: 126px 92px; }
-.mb-head { transform-origin: 100px 80px; }
+/* Pivots used by the emotes (SVG user units) */
+.mb-fig { transform-origin: 100px 172px; }  /* feet */
+.mb-head { transform-origin: 100px 80px; }  /* neck */
+.mb-arm { transform-origin: 126px 92px; }   /* right shoulder */
+.mb-lprop { transform-origin: 58px 125px; } /* left hand + item */
 
-/* The two middle lines: one diameter that rotates clockwise with the ring */
+/* ---------- The two wavy strands ----------
+   .mbti__diam   = sits on the ring centre, rotates clockwise during the wipe (JS)
+   .mbti__sway   = wrapper (kept for hooks)
+   .mbti__strand = 1px SVG whose origin is the ring centre; JS draws the paths,
+                   end dots and ripple rings into it every frame */
 .mbti__diam {
   position: absolute;
   left: 50%;
@@ -136,16 +195,25 @@
   pointer-events: none;
 }
 
-.mbti__diam i {
+.mbti__sway {
   position: absolute;
-  top: -1px;
-  height: 2px;
-  background: var(--mbti-ink);
-  width: calc(var(--mbti-rest) + var(--ext, 0) * 130vmax);
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
 }
 
-.mbti__diam-r { left: calc(var(--mbti-ring) / 2 + 3vw); }
-.mbti__diam-l { right: calc(var(--mbti-ring) / 2 + 3vw); }
+.mbti__strand {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  display: block;
+}
+
+/* stroke, fill and width are set as SVG attributes in the JSX / drawStrands */
 
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {

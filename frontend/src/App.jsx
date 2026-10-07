@@ -9,6 +9,7 @@ import HowItWorksPage from './Pages/HowItWorksPage/HowItWorksPage'
 import ContactsPage from './Pages/ContactPage/ContactPage'
 import LoginPage from './Pages/AuthPages/LoginPage'
 import RegisterPage from './Pages/AuthPages/RegisterPage'
+import Assesment from './Pages/AssesmentPage/Assesment'
 
 
 function Layout() {
@@ -32,6 +33,7 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/login" element={<LoginPage />} /> 
         <Route path="/contact" element={<ContactsPage />} />
+        <Route path="/assesment" element={<Assesment />} />
         <Route path="*" element={<div>404 - Page not found</div>} />
       </Route>
     </Routes>

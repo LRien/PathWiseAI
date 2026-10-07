@@ -1,15 +1,14 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import PuzzleBrain from './PuzzleBrain'
 
-const HeroSection = ({ ctaHref = '#how' }) => {
+const HeroSection = () => {
   return (
     <section className="hero" id="top">
       <div className="hero__copy">
         <h1 className="hero__title" aria-label="Discover the Career Path That Fits You">
-          <span className="hero__line"><span>Discover the</span></span>
-          <span className="hero__line"><span>Career</span></span>
-          <span className="hero__line"><span>Path That Fits</span></span>
-          <span className="hero__line"><span>You</span></span>
+          <span className="hero__line"><span>Discover the Career</span></span>
+          <span className="hero__line"><span>Path That Fits You</span></span>
         </h1>
 
         <p className="hero__text">
@@ -19,7 +18,9 @@ const HeroSection = ({ ctaHref = '#how' }) => {
           career recommendations based on your overall profile.
         </p>
 
-        <a className="hero__btn" href={ctaHref}>GET STARTED</a>
+        <Link to="/assesment" className="hero__btn">
+          GET STARTED
+        </Link>
       </div>
 
       <div className="hero__media">

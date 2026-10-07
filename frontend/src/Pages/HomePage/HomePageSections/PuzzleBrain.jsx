@@ -1,35 +1,58 @@
 import React, { useEffect, useRef } from 'react'
-import anime from 'animejs/lib/anime.es.js' // npm i animejs@3.2.2 (v3 only, v4 has no default export)
+import anime from 'animejs/lib/anime.es.js' // npm i animejs@3.2.2 (v3 only)
 
-const S = 40
-const COLS = 13
-const ROWS = 10
+const S = 30
+const COLS = 11
+const ROWS = 17
 const W = COLS * S
 const H = ROWS * S
-const IDLE_MS = 7000 // untouched this long -> pieces flow back into the brain
+const PAD = S * 1.5 // free space around the figure so pieces can be pulled away
+const VX = -PAD
+const VY = -PAD
+const VW = W + PAD * 2
+const VH = H + PAD * 2
+const IDLE_MS = 9000 // untouched this long -> every piece flies back
+const SNAP = S * 0.55 // drop a piece this close to its slot -> it clicks in
 const MIN = S * 0.98
 const NS = 'http://www.w3.org/2000/svg'
 
-// Frontal lobe on the left. R frontal, Y parietal, B occipital, T temporal, G cerebellum, N stem
+// K hair | F face | E eye | N nose | D neck | B blue | R red | Y yellow
+// O orange | W white cuff | H hand | G gray pants | C dark legs | S shoes
 const SHAPE = [
-  '...RRYYYBB...',
-  '..RRRYYYYBB..',
-  '.RRRRRYYYBBB.',
-  'RRRRRRYYYBBBB',
-  'RRRRRYYYYBBBB',
-  '.RRRRTTTTBBB.',
-  '..RRTTTTTGGG.',
-  '....TTTNGGG..',
-  '......NN.....',
-  '......N......',
+  '...KKKKK...',
+  '..KKKKKKK..',
+  '..KKKKKKK..',
+  '..KFFFFFK..',
+  '..KFEFEFK..',
+  '..KFFNFFK..',
+  '....DDD....',
+  '.BBRBBBRRB.',
+  'OBRRBBYRRBW',
+  'OBBYYYYYBRW',
+  'HBRYYYYYRBH',
+  'BBYRGGGBYRB',
+  'YBRYGGGRBYB',
+  'BYRBGGGYRBY',
+  'RBYBCCCYBRY',
+  '....C.C....',
+  '...SS.SS...',
 ]
-const LOBES = {
-  R: ['#e0393e', '#f0605f'],
-  Y: ['#f7c52d', '#fbd95e'],
+
+const COLORS = {
+  K: ['#1b1b1d', '#2d2d30'],
+  F: ['#b97b53', '#c78960'],
+  E: ['#b97b53', '#c78960'],
+  N: ['#b97b53', '#c78960'],
+  D: ['#9a603c', '#a86a44'],
   B: ['#2f7de1', '#3a9be0'],
-  T: ['#ffffff', '#f1e9db'],
-  G: ['#6b7a8c', '#8795a6'],
-  N: ['#3b4f66', '#2c3d52'],
+  R: ['#d93a3f', '#ee5a5c'],
+  Y: ['#f7c52d', '#fbd95e'],
+  O: ['#f08a24', '#f6a04a'],
+  W: ['#ffffff', '#f1ece4'],
+  H: ['#b97b53', '#a86a44'],
+  G: ['#667587', '#7a8899'],
+  C: ['#33465c', '#2a3b4f'],
+  S: ['#7c8696', '#6c7686'],
 }
 
 const el = (name, attrs) => {
@@ -56,8 +79,8 @@ const PuzzleBrain = () => {
     let gy = 0
     let last = { dx: 0, dy: 0, t: 0 }
 
-    // deterministic shade variation so the brain looks the same every load
-    let seed = 7
+    // deterministic shade variation so the figure looks the same every load
+    let seed = 11
     const rnd = () => {
       seed = (seed * 9301 + 49297) % 233280
       return seed / 233280
@@ -69,16 +92,38 @@ const PuzzleBrain = () => {
     }
     const renderAll = () => tiles.forEach(render)
 
-    const mk = (c, r, fill) => {
+    const mk = (c, r, ch) => {
+      const fill = COLORS[ch][rnd() > 0.5 ? 1 : 0]
       const x = c * S
       const y = r * S
       const g = el('g', {})
       g.style.transformBox = 'fill-box'
       g.style.transformOrigin = 'center'
       g.style.cursor = 'grab'
+
       g.appendChild(el('rect', { x, y, width: S, height: S, fill, stroke: 'rgba(0,0,0,.18)' }))
-      g.appendChild(el('circle', { cx: x, cy: y + S / 2, r: 6, fill: 'rgba(0,0,0,.22)' }))
-      g.appendChild(el('circle', { cx: x + S / 2, cy: y - 3, r: 7, fill }))
+      // puzzle socket (left) + tab (top)
+      g.appendChild(el('circle', { cx: x, cy: y + S / 2, r: 5, fill: 'rgba(0,0,0,.22)' }))
+      g.appendChild(el('circle', { cx: x + S / 2, cy: y - 2.5, r: 6, fill }))
+
+      // face details live on their own tiles so they travel with the piece
+      if (ch === 'E') {
+        const cx = x + S / 2
+        const cy = y + S / 2
+        g.appendChild(el('polygon', {
+          points: `${cx},${cy - 6} ${cx + 8},${cy} ${cx},${cy + 6} ${cx - 8},${cy}`,
+          fill: '#141416',
+        }))
+      }
+      if (ch === 'N') {
+        const cx = x + S / 2
+        const cy = y + S / 2
+        g.appendChild(el('polygon', {
+          points: `${cx},${cy - 8} ${cx + 9},${cy + 8} ${cx - 9},${cy + 8}`,
+          fill: '#a6683f',
+        }))
+      }
+
       const t = { g, hx: x + S / 2, hy: y + S / 2, x: 0, y: 0, vx: 0, vy: 0, rot: 0, s: 1, o: 1 }
       g.__t = t
       layer.appendChild(g)
@@ -87,7 +132,7 @@ const PuzzleBrain = () => {
 
     SHAPE.forEach((row, r) => {
       row.split('').forEach((ch, c) => {
-        if (ch !== '.') mk(c, r, LOBES[ch][rnd() > 0.5 ? 1 : 0])
+        if (ch !== '.') mk(c, r, ch)
       })
     })
 
@@ -131,10 +176,10 @@ const PuzzleBrain = () => {
         if (a === drag) { render(a); continue }
         const cx = a.hx + a.x
         const cy = a.hy + a.y
-        if (cx < 0) { a.x = -a.hx; a.vx = Math.abs(a.vx) * 0.5 }
-        else if (cx > W) { a.x = W - a.hx; a.vx = -Math.abs(a.vx) * 0.5 }
-        if (cy < 0) { a.y = -a.hy; a.vy = Math.abs(a.vy) * 0.5 }
-        else if (cy > H) { a.y = H - a.hy; a.vy = -Math.abs(a.vy) * 0.5 }
+        if (cx < -PAD) { a.x = -PAD - a.hx; a.vx = Math.abs(a.vx) * 0.5 }
+        else if (cx > W + PAD) { a.x = W + PAD - a.hx; a.vx = -Math.abs(a.vx) * 0.5 }
+        if (cy < -PAD) { a.y = -PAD - a.hy; a.vy = Math.abs(a.vy) * 0.5 }
+        else if (cy > H + PAD) { a.y = H + PAD - a.hy; a.vy = -Math.abs(a.vy) * 0.5 }
         a.rot += (Math.max(-25, Math.min(25, a.vx * 4)) - a.rot) * 0.2
         if (Math.abs(a.vx) > 0.03 || Math.abs(a.vy) > 0.03 || Math.abs(a.rot) > 0.3) moving = true
         render(a)
@@ -143,7 +188,7 @@ const PuzzleBrain = () => {
     }
     const wake = () => { if (!raf) raf = requestAnimationFrame(step) }
 
-    // ---- idle: after a while untouched, everything flows back into the brain
+    // ---- reassemble: everything flows back into the figure
     const reset = () => {
       if (drag) { touch(); return }
       anime.remove(tiles)
@@ -164,7 +209,10 @@ const PuzzleBrain = () => {
     // ---- dragging
     const pt = (e) => {
       const b = svg.getBoundingClientRect()
-      return { x: ((e.clientX - b.left) / b.width) * W, y: ((e.clientY - b.top) / b.height) * H }
+      return {
+        x: VX + ((e.clientX - b.left) / b.width) * VW,
+        y: VY + ((e.clientY - b.top) / b.height) * VH,
+      }
     }
     const onDown = (e) => {
       const g = e.target.closest && e.target.closest('g')
@@ -186,8 +234,8 @@ const PuzzleBrain = () => {
     const onMove = (e) => {
       if (!drag) return
       const p = pt(e)
-      const nx = Math.max(0, Math.min(W, p.x + gx))
-      const ny = Math.max(0, Math.min(H, p.y + gy))
+      const nx = Math.max(-PAD, Math.min(W + PAD, p.x + gx))
+      const ny = Math.max(-PAD, Math.min(H + PAD, p.y + gy))
       last = { dx: nx - (drag.hx + drag.x), dy: ny - (drag.hy + drag.y), t: performance.now() }
       drag.x = nx - drag.hx
       drag.y = ny - drag.hy
@@ -198,9 +246,20 @@ const PuzzleBrain = () => {
       const t = drag
       drag = null
       svg.style.cursor = ''
-      if (performance.now() - last.t < 80) { t.vx = last.dx * 0.6; t.vy = last.dy * 0.6 }
       anime.remove(t)
-      anime({ targets: t, s: 1, duration: 400, easing: 'easeOutElastic(1, .6)', update: () => render(t) })
+
+      // attach: dropped close to its own slot -> click back into place
+      if (Math.hypot(t.x, t.y) < SNAP) {
+        t.vx = 0; t.vy = 0
+        anime({
+          targets: t, x: 0, y: 0, rot: 0, s: 1,
+          duration: 450, easing: 'easeOutElastic(1, .6)', update: () => render(t),
+        })
+      } else {
+        // detach: fling it with the throw velocity
+        if (performance.now() - last.t < 80) { t.vx = last.dx * 0.6; t.vy = last.dy * 0.6 }
+        anime({ targets: t, s: 1, duration: 400, easing: 'easeOutElastic(1, .6)', update: () => render(t) })
+      }
       touch()
       wake()
     }
@@ -208,11 +267,13 @@ const PuzzleBrain = () => {
     svg.addEventListener('pointermove', onMove)
     svg.addEventListener('pointerup', release)
     svg.addEventListener('pointercancel', release)
+    svg.addEventListener('dblclick', reset) // double-click = rebuild now
 
-    // ---- intro: pieces fly in and assemble the brain
+    // ---- intro: pieces fly in and assemble the figure
     const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reduced) {
       ready = true
+      touch()
     } else {
       tiles.forEach((t) => {
         t.x = anime.random(-320, 320)
@@ -224,13 +285,11 @@ const PuzzleBrain = () => {
       renderAll()
       anime({
         targets: tiles, x: 0, y: 0, rot: 0, s: 1, o: 1,
-        delay: anime.stagger(14), duration: 1100, easing: 'easeOutElastic(1, .6)',
+        delay: anime.stagger(10), duration: 1100, easing: 'easeOutElastic(1, .6)',
         update: renderAll,
         complete: () => { ready = true; touch() },
       })
-      // allow dragging even if the intro is skipped (e.g. tab in background)
     }
-    if (reduced) touch()
 
     return () => {
       clearTimeout(idleT)
@@ -240,6 +299,7 @@ const PuzzleBrain = () => {
       svg.removeEventListener('pointermove', onMove)
       svg.removeEventListener('pointerup', release)
       svg.removeEventListener('pointercancel', release)
+      svg.removeEventListener('dblclick', reset)
       layer.innerHTML = ''
     }
   }, [])
@@ -248,10 +308,18 @@ const PuzzleBrain = () => {
     <svg
       ref={svgRef}
       className="hero__img"
-      viewBox={`0 0 ${W} ${H}`}
+      viewBox={`${VX} ${VY} ${VW} ${VH}`}
       role="img"
-      aria-label="A brain made of colorful puzzle pieces. Drag the pieces around."
-      style={{ width: '100%', maxWidth: 520, height: 'auto', overflow: 'visible', touchAction: 'none', userSelect: 'none' }}
+      aria-label="A person made of colorful puzzle pieces. Drag the pieces around."
+      style={{
+        width: '100%',
+        maxWidth: 640,
+        maxHeight: '80vh',
+        height: 'auto',
+        overflow: 'visible',
+        touchAction: 'none',
+        userSelect: 'none',
+      }}
     >
       <g ref={layerRef} />
     </svg>
