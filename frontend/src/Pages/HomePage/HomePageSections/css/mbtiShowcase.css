@@ -111,7 +111,7 @@
 
 .mbti__seg {
   outline: none;
-  cursor: pointer;
+  pointer-events: none; /* ring is display-only: no click / tap */
 }
 
 .mbti__seg-track,
@@ -135,7 +135,7 @@
   fill: none;
   stroke: transparent;
   stroke-width: 36;
-  pointer-events: stroke;
+  pointer-events: none;
 }
 
 .mbti__seg:hover .mbti__seg-track {
@@ -165,7 +165,7 @@
   inset: 8.5%;
   border-radius: 50%;
   overflow: hidden;
-  cursor: pointer;
+  pointer-events: none; /* character is display-only: no click / tap */
 }
 
 .mbti__disc svg {

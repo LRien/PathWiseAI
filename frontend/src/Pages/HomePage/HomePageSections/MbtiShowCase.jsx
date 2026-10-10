@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef } from 'react'
 import './css/mbtiShowcase.css'
 
 /* ---------- Data: 16 low-poly adventurers drawn in pure SVG (no image files, no animation library) ---------- */
@@ -31,7 +31,6 @@ const TEXT_STAGGER = 40 // ms between each text block leaving
 const WIPE_MS = 1400 // the spin / wipe itself
 const FAST_MS = 650 // wipe speed when the user is scrolling fast and personalities are queued up
 const IDLE_WAVE_MS = 1100 // stay this long without scrolling and the strands swell and the dots ripple
-const MOBILE_Q = '(max-width: 767px)' // at or below this width, tapping a character does not replay its emote
 const TAU = Math.PI * 2
 
 const polar = (deg) => {
@@ -445,18 +444,6 @@ const grow = (p, n) => {
 const cen = (p) => [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length]
 
 const MbtiShowCase = () => {
-  /* true on phones / narrow screens: tapping the character does nothing there, so it can never get in the way of scrolling */
-  const [mobile, setMobile] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_Q).matches
-  )
-  useEffect(() => {
-    const mq = window.matchMedia(MOBILE_Q)
-    const on = (e) => setMobile(e.matches)
-    setMobile(mq.matches)
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
-
   const secRef = useRef(null)
   const stageRef = useRef(null)
   const lyA = useRef(null)
@@ -467,7 +454,6 @@ const MbtiShowCase = () => {
   const charRef = useRef(null)
   const segRef = useRef([])
   const jumpRef = useRef(() => {})
-  const emoteRef = useRef(() => {})
 
   useEffect(() => {
     const sec = secRef.current
@@ -515,7 +501,6 @@ const MbtiShowCase = () => {
 
     function setChar(i, pop = true) {
       ch.innerHTML = draw(i)
-      ch.parentElement.setAttribute('aria-label', TYPES[i].join(' ') + ', activate to replay its emote')
       if (canAnim && pop) {
         ch.querySelectorAll('.mb-part').forEach((el, k) =>
           el.animate([{ transform: 'scale(.55)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], {
@@ -621,12 +606,6 @@ const MbtiShowCase = () => {
     function queueEmote(i, delay) {
       clearTimeout(emoteT)
       emoteT = setTimeout(() => playEmote(i), delay)
-    }
-
-    /* tap / click / Enter on the character replays its emote (desktop only: on mobile it is ignored) */
-    emoteRef.current = () => {
-      if (matchMedia(MOBILE_Q).matches) return
-      if (shown >= 0 && !busy) playEmote(shown)
     }
 
     /* ---------- morph ---------- */
@@ -953,40 +932,18 @@ const MbtiShowCase = () => {
               <g
                 key={s.code}
                 className="mbti__seg"
-                role="button"
-                tabIndex={0}
-                aria-label={`${s.code} ${s.name}, jump to this personality`}
                 ref={(el) => { segRef.current[k] = el }}
-                onClick={() => jumpRef.current(k)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jumpRef.current(k) }
-                }}
               >
-                <title>{`${s.code} · ${s.name}`}</title>
                 <path className="mbti__seg-track" d={s.d} />
                 <path className="mbti__seg-fill" d={s.d} pathLength="1" />
-                <path className="mbti__seg-hit" d={s.d} />
               </g>
             ))}
             <g ref={knobRef}>
               <circle className="mbti__knob" cx="200" cy="15" r="15" />
             </g>
           </svg>
-          {/* On mobile the character is not tappable (pointer-events off), so touches pass through and never interfere with scrolling */}
-          <div
-            className="mbti__disc"
-            {...(mobile
-              ? { style: { pointerEvents: 'none' } }
-              : {
-                  tabIndex: 0,
-                  role: 'button',
-                  'aria-label': 'INTJ Architect, activate to replay its emote',
-                  onClick: () => emoteRef.current(),
-                  onKeyDown: (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); emoteRef.current() }
-                  },
-                })}
-          >
+          {/* the character is display-only: no click, tap or keyboard interaction */}
+          <div className="mbti__disc">
             <svg ref={charRef} viewBox="0 0 200 200" aria-hidden="true" />
           </div>
         </div>
