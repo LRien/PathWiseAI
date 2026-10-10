@@ -1,8 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;900&display=swap');
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
 
 /* Keep the site light on every device, even if the phone is in dark mode */
 :root {
