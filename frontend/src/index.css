@@ -2,6 +2,12 @@
 @import "tailwindcss";
 
 
+:root {
+  color-scheme: only light;
+}
+html {
+  background-color: #F2E7D4;
+}
 
 body{
   background-color: #F2E7D4;
