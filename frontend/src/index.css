@@ -2,10 +2,6 @@
 @import "tailwindcss";
 
 
-/* Keep the site light on every device, even if the phone is in dark mode */
-:root {
-  color-scheme: light;
-}
 
 body{
   background-color: #F2E7D4;
