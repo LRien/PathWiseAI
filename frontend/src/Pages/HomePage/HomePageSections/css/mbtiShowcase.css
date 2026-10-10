@@ -1,7 +1,9 @@
 /* ---------- MBTI showcase: pinned poster that swaps per personality as you scroll ---------- */
 .mbti {
+  --mbti-ink: #0a0a0a;
   position: relative;
-  height: 900vh; /* scroll distance: 16 personalities */
+  height: 900vh;  /* scroll distance: 16 personalities */
+  height: 900dvh; /* FIX: follows the real visible height on phones */
   font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
   width: 100%;
   color: var(--mbti-ink);
@@ -21,9 +23,17 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh; /* FIX: was 100vh only, which is taller than the visible screen on phones */
   overflow: hidden;
   background: #d9c8f0;
   color: var(--mbti-ink);
+
+  /* FIX: touch behaviour. JS sets touch-action inline while the section is pinned. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Two stacked poster layers; a clockwise conic mask swaps one for the other */
@@ -180,11 +190,7 @@
 .mb-arm { transform-origin: 126px 92px; }   /* right shoulder */
 .mb-lprop { transform-origin: 58px 125px; } /* left hand + item */
 
-/* ---------- The two wavy strands ----------
-   .mbti__diam   = sits on the ring centre, rotates clockwise during the wipe (JS)
-   .mbti__sway   = wrapper (kept for hooks)
-   .mbti__strand = 1px SVG whose origin is the ring centre; JS draws the paths,
-                   end dots and ripple rings into it every frame */
+/* ---------- The two wavy strands ---------- */
 .mbti__diam {
   position: absolute;
   left: 50%;
@@ -212,8 +218,6 @@
   overflow: visible;
   display: block;
 }
-
-/* stroke, fill and width are set as SVG attributes in the JSX / drawStrands */
 
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {
