@@ -5,11 +5,15 @@ import Lenis from 'lenis'
 import 'lenis/dist/lenis.css'
 import App from './App.jsx'
 
-/* Smooth scrolling for the whole site (skipped if the user prefers reduced motion) */
-if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+/* Smooth scrolling for mouse / trackpad devices only.
+   Phones keep native touch scrolling, so the pinned MBTI section isn't fighting Lenis. */
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+const hasFinePointer = matchMedia('(hover: hover) and (pointer: fine)').matches
+
+if (!reduceMotion && hasFinePointer) {
   window.lenis = new Lenis({
-    autoRaf: true,   // Lenis runs its own animation loop
-    lerp: 0.1,       // lower = floatier (0.05), higher = snappier (0.2)
+    autoRaf: true,
+    lerp: 0.1,
     wheelMultiplier: 1,
   })
 }
