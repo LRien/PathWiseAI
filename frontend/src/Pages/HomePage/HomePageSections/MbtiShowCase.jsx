@@ -471,10 +471,17 @@ const MbtiShowCase = () => {
 
   useEffect(() => {
     const sec = secRef.current
+    const stage = stageRef.current
     const LY = [lyA.current, lyB.current]
     const diam = diamRef.current, sway = swayRef.current, knob = knobRef.current, ch = charRef.current
     const segs = segRef.current.map((g) => ({ g, fill: g.querySelector('.mbti__seg-fill') }))
     const canAnim = !matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    /* FIX: the real pinned height is the stage's own height (CSS vh/svh/dvh), not window.innerHeight,
+       which changes on phones when the URL bar shows or hides */
+    const vh = () => stage.offsetHeight || innerHeight
+    /* FIX: on touch devices the type may only change through tryStep / ring taps, never through native scroll drift */
+    const coarse = matchMedia('(pointer: coarse)')
 
     let shown = -1, want = -1, busy = false, act = 0
     let M = null, raf = 0, tickRaf = 0, tick = false
@@ -525,11 +532,11 @@ const MbtiShowCase = () => {
     }
 
     function drawStrands(now) {
-      const vw = innerWidth, vh = innerHeight
+      const vw = innerWidth, vhh = innerHeight
       const rw = ringEl.offsetWidth
       const x0 = rw / 2 + vw * 0.03
       const rest = vw * 0.5 - rw / 2 - vw * 0.06
-      const L = Math.max(10, rest + ext * 1.3 * Math.max(vw, vh))
+      const L = Math.max(10, rest + ext * 1.3 * Math.max(vw, vhh))
       const lam = Math.max(90, rest * 1.1) // wavelength
       const A = Math.min(rw * 0.14, Math.max(rest, 40) * 0.6) * amp // wave height: 0 = perfectly straight
       const ramp = Math.max(40, rest * 0.5) // the wave grows in from the ring
@@ -727,6 +734,7 @@ const MbtiShowCase = () => {
             queueEmote(i, 350)
             armWave()
           }
+          syncTouchAction()
         })
       })
     }
@@ -755,7 +763,7 @@ const MbtiShowCase = () => {
     function update() {
       tick = false
       calm()
-      const max = sec.offsetHeight - innerHeight
+      const max = sec.offsetHeight - vh()
       let r = sec.getBoundingClientRect()
       const pin = isPinned(r)
       /* just entered the pinned section: land exactly on the first / last type, whatever the scroll momentum was
@@ -772,20 +780,32 @@ const MbtiShowCase = () => {
       const p = Math.min(1, Math.max(0, -r.top / max))
       ring(p)
       const i = Math.min(15, Math.floor(p * 16))
+
+      /* FIX: on touch devices, momentum / native drift must never change the type. Pull the page back to the
+         centre of the current type; only tryStep() and ring taps (which set `jump`) may move to another one. */
+      if (coarse.matches && pin && jump < 0 && shown >= 0 && want >= 0 && i !== want) {
+        const y = scrollY + r.top + ((want + SNAP_LAND) / 16) * max
+        if (window.lenis) window.lenis.scrollTo(y, { immediate: true, force: true })
+        else scrollTo({ top: y, behavior: 'auto' })
+        syncTouchAction()
+        return
+      }
+
       /* while a segment click is scrolling us there, skip the types we pass through */
       if (jump >= 0) {
-        if (i !== jump) return
+        if (i !== jump) { syncTouchAction(); return }
         jump = -1
         skipTo = true // clicked a segment: go straight there
       }
       if (i !== want) { want = i; go() }
+      syncTouchAction()
     }
     const onScroll = () => { if (!tick) { tick = true; tickRaf = requestAnimationFrame(update) } }
 
     function cancelJump() { jump = -1; clearTimeout(jumpT) }
 
     jumpRef.current = (k, land = JUMP_LAND, dur = 1.6) => {
-      const max = sec.offsetHeight - innerHeight
+      const max = sec.offsetHeight - vh()
       const top = sec.getBoundingClientRect().top + scrollY + ((k + land) / 16) * max
       jump = k
       clearTimeout(jumpT)
@@ -795,11 +815,19 @@ const MbtiShowCase = () => {
     }
 
     /* ---------- paged scrolling: one gesture = one personality, so spamming the scroll can never skip one ---------- */
-    const isPinned = (rect) => rect.top <= 0 && rect.bottom >= innerHeight - 2
+    const isPinned = (rect) => rect.top <= 0 && rect.bottom >= vh() - 2
     const pinned = () => isPinned(sec.getBoundingClientRect())
     const base = () => (want >= 0 ? want : 0)
     const atEdge = (dir) => (dir > 0 && base() >= 15) || (dir < 0 && base() <= 0)
     const settled = () => !busy && jump < 0 && shown === want && performance.now() >= lockUntil
+
+    /* FIX: touch-action has to be decided BEFORE a touch starts, so it is kept in sync with the state.
+       While pinned we own the gesture ('none'); at the first / last type only the direction that leaves the section
+       is handed back to the browser (finger down at the first type, finger up at the last type). */
+    function syncTouchAction() {
+      if (!pinned()) { stage.style.touchAction = ''; return }
+      stage.style.touchAction = atEdge(1) ? 'pan-up' : atEdge(-1) ? 'pan-down' : 'none'
+    }
 
     function tryStep(dir) {
       if (!settled()) return
@@ -831,13 +859,15 @@ const MbtiShowCase = () => {
     }
 
     /* touch: one swipe = one personality */
-    const onTouchStart = (e) => { ty = e.touches[0].clientY; tdone = false }
+    const onTouchStart = (e) => { ty = e.touches[0].clientY; tdone = false; syncTouchAction() }
     const onTouchMove = (e) => {
-      if (!pinned() || !e.cancelable) return
+      if (!pinned()) return
       const dy = ty - e.touches[0].clientY // > 0: finger moving up = scroll down
       const dir = Math.sign(dy)
       if (dir && atEdge(dir) && settled()) return // let the page scroll out at the ends
-      e.preventDefault()
+      /* FIX: no longer bail out when the event is not cancelable: the step must still happen, only the
+         preventDefault is conditional (touch-action already blocks native scrolling while pinned) */
+      if (e.cancelable) e.preventDefault()
       if (!tdone && Math.abs(dy) >= 36) { tdone = true; tryStep(dir) }
     }
 
@@ -902,6 +932,7 @@ const MbtiShowCase = () => {
       diam.style.transform = ''
       sway.style.transform = ''
       knob.style.transform = ''
+      stage.style.touchAction = ''
       segs.forEach((s) => {
         s.fill.style.strokeDashoffset = ''
         s.g.classList.remove('is-on')
