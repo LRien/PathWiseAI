@@ -1,18 +1,17 @@
+// server/server.js  (REPLACE your existing server.js, there is no index.js)
+
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from './src/config/supabase.js'
+import authRoutes from './src/routes/auth.js'
+import assessmentRoutes from './src/routes/assessments.js'
+import predictionRoutes from './src/routes/predictions.js'
 
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env')
+if (!process.env.JWT_SECRET) {
+  console.error('Missing JWT_SECRET in .env')
   process.exit(1)
 }
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { persistSession: false },
-})
 
 const app = express()
 app.use(cors({ origin: process.env.CLIENT_URL }))
@@ -29,6 +28,10 @@ app.get('/api/health', async (_req, res) => {
     database: error ? 'connected (users table not created yet)' : 'connected',
   })
 })
+
+app.use('/api/auth', authRoutes)
+app.use('/api/assessments', assessmentRoutes)
+app.use('/api/predictions', predictionRoutes)
 
 const PORT = process.env.PORT || 5000
 app.listen(PORT, () => console.log(`API running on port ${PORT}`))
