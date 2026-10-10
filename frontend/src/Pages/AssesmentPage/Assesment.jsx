@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 
 const PERSONALITY_TEST_URL = 'https://www.16personalities.com/free-personality-test'
 
@@ -23,6 +23,10 @@ const KNOWN_POINTS = [
   'Proceed immediately to the full assessment',
   'You can always retake the test later',
 ]
+
+// Shared by both the <button> and the <Link> so they look identical
+const PRIMARY_BTN =
+  'block w-full rounded-full bg-[#0A0A2C] py-3.5 text-center text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF]'
 
 const BulletList = ({ items }) => (
   <ul className="space-y-3">
@@ -82,13 +86,11 @@ const Assesment = () => {
             <BulletList items={TEST_POINTS} />
           </div>
 
-          <button
-            type="button"
-            onClick={handleTakeTest}
-            className="mt-8 w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF]"
-          >
-            Take Personality Test
-          </button>
+          <div className="mt-auto pt-8">
+            <button type="button" onClick={handleTakeTest} className={PRIMARY_BTN}>
+              Take Personality Test
+            </button>
+          </div>
         </div>
 
         {/* Card 2: already know it */}
@@ -103,40 +105,11 @@ const Assesment = () => {
             <BulletList items={KNOWN_POINTS} />
           </div>
 
-          <div className="mt-6">
-            <label htmlFor="mbti" className="mb-2 block text-sm font-semibold text-[#0A0A2C]">
-              Your MBTI type
-            </label>
-            <select
-              id="mbti"
-              value={mbti}
-              onChange={(e) => {
-                setMbti(e.target.value)
-                setError('')
-              }}
-              className="w-full rounded-2xl border border-[#E2D6C3] bg-[#F3EADB] px-4 py-3.5 text-sm text-[#0A0A2C] outline-none transition focus:border-[#0A0A2C] focus:bg-[#FAF6EF] focus:ring-2 focus:ring-[#0A0A2C]/15"
-            >
-              <option value="">Select your type...</option>
-              {MBTI_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-            {error && (
-              <p role="alert" className="mt-2 text-xs text-red-600">
-                {error}
-              </p>
-            )}
+          <div className="mt-auto pt-8">
+            <Link to="/assessment-test" className={PRIMARY_BTN}>
+              Take Career Recommendation Assessment
+            </Link>
           </div>
-
-          <button
-            type="button"
-            onClick={handleStartAssessment}
-            className="mt-8 w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] md:mt-auto"
-          >
-            Take Career Recommendation Assessment
-          </button>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter, useLocation } from 'react-router-dom'
 import Lenis from 'lenis'
 import 'lenis/dist/lenis.css'
 import App from './App.jsx'
@@ -18,9 +18,32 @@ if (!reduceMotion && hasFinePointer) {
   })
 }
 
+/* Runs on every route change:
+   - the dashboard (sidebar, panels, modals) uses normal native scrolling, so Lenis is paused there
+   - every page starts at the top */
+const RouteScrollManager = () => {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    const lenis = window.lenis
+    const inDashboard = pathname.startsWith('/dashboard')
+
+    if (lenis) {
+      if (inDashboard) lenis.stop()
+      else lenis.start()
+      lenis.scrollTo(0, { immediate: true, force: true })
+    } else {
+      window.scrollTo(0, 0)
+    }
+  }, [pathname])
+
+  return null
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
+      <RouteScrollManager />
       <App />
     </BrowserRouter>
   </StrictMode>

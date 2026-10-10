@@ -375,7 +375,7 @@ body{
     animation: none;
   }
 }
-/* ---------- Footer ---------- */
+/* ---------- Footer (replace the whole old ".ft" block in index.css with this) ---------- */
 .ft {
   width: 100%;
   background: #f5efe4;
@@ -383,7 +383,7 @@ body{
   font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   box-sizing: border-box;
-  padding: clamp(32px, 6vw, 64px) clamp(20px, 5vw, 56px) 28px;
+  padding: clamp(28px, 5vw, 48px) clamp(20px, 5vw, 56px) 20px;
 }
 .ft *,
 .ft *::before,
@@ -391,63 +391,70 @@ body{
   box-sizing: border-box;
 }
 .ft-inner {
-  max-width: 1200px;
+  max-width: 1100px;
   margin: 0 auto;
 }
 
-.ft-top {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
-  align-items: center;
-  gap: clamp(24px, 4vw, 56px);
-  padding-bottom: 40px;
+/* brand + short description */
+.ft-about {
+  text-align: center;
+  margin-bottom: 24px;
 }
-
 .ft-brand {
-  font-size: 20px;
-  font-weight: 700;
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 800;
   letter-spacing: -0.01em;
-  margin: 0 0 24px;
 }
 .ft-about p {
-  margin: 0;
-  max-width: 24em;
-  font-size: clamp(16px, 1.5vw, 20px);
-  line-height: 1.2;
+  margin: 0 auto;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.5;
   font-weight: 500;
+  color: #4a4843;
 }
 
-.ft-col {
+/* one row of links with the illustration in the middle */
+.ft-links {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  align-self: start;
-  padding-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 4vw, 48px);
+  padding: 8px 0 24px;
 }
-.ft-col h4 {
-  margin: 0 0 12px;
-  font-size: 15px;
-  font-weight: 700;
+.ft-group {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: clamp(16px, 4vw, 48px);
 }
-.ft-col a {
+.ft-group:first-child {
+  justify-content: flex-start;
+}
+.ft-group:last-child {
+  justify-content: flex-end;
+}
+.ft-links a {
   color: #4a4843;
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
   transition: color 0.2s;
 }
-.ft-col a:hover {
+.ft-links a:hover {
   color: #0a0a0a;
 }
-.ft-col a:focus-visible {
+.ft-links a:focus-visible {
   outline: 3px solid #1f77c9;
   outline-offset: 3px;
 }
 
 .ft-art {
-  justify-self: end;
-  height: clamp(140px, 16vw, 190px);
+  flex: none;
+  height: clamp(90px, 10vw, 120px);
   width: auto;
   display: block;
 }
@@ -456,24 +463,30 @@ body{
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding-top: 18px;
-  border-top: 2px solid #a8a6a0;
+  padding-top: 16px;
+  border-top: 1px solid #c9c6bf;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #6b6a66;
 }
 
-@media (max-width: 900px) {
-  .ft-top {
-    grid-template-columns: 1fr 1fr;
-  }
-  .ft-about {
-    grid-column: 1 / -1;
+/* phones: illustration on top, links wrap in the middle */
+@media (max-width: 700px) {
+  .ft-links {
+    flex-direction: column;
+    gap: 14px;
   }
   .ft-art {
-    grid-column: 1 / -1;
-    justify-self: center;
+    order: -1;
+  }
+  .ft-group,
+  .ft-group:first-child,
+  .ft-group:last-child {
+    flex: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 24px;
   }
 }
 @media (max-width: 520px) {
@@ -482,7 +495,6 @@ body{
     text-align: center;
   }
 }
-
 /* ---------- Contact ---------- */
 .contact {
   --c-ink: #0a0a0a;

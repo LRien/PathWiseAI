@@ -18,7 +18,7 @@ const HeroSection = () => {
           career recommendations based on your overall profile.
         </p>
 
-        <Link to="/assesment" className="hero__btn">
+        <Link to="/assessment" className="hero__btn">
           GET STARTED
         </Link>
       </div>
