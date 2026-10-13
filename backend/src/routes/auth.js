@@ -1,4 +1,4 @@
-// server/routes/auth.js  (REPLACE the previous version)
+// backend/src/routes/auth.js  (REPLACE the previous version)
 
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
@@ -6,6 +6,8 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { supabase } from '../config/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
+import { issueVerification, consumeVerification, onCooldown } from '../services/emailVerification.js'
+import { issuePasswordReset, consumePasswordReset, onResetCooldown } from '../services/passwordReset.js'
 
 const router = Router()
 
@@ -19,11 +21,12 @@ const signToken = (user) =>
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   })
 
-const publicUser = ({ id, name, email, role, created_at }) => ({
+const publicUser = ({ id, name, email, role, email_verified, created_at }) => ({
   id,
   name,
   email,
   role,
+  email_verified,
   created_at,
 })
 
@@ -39,6 +42,8 @@ async function revokeToken(reqUser) {
 }
 
 // POST /api/auth/register
+// Creates the account (unverified) and emails a 6-digit code via Brevo.
+// No JWT is issued until the email is verified.
 router.post('/register', async (req, res) => {
   const name = String(req.body.name || '').trim()
   const email = String(req.body.email || '').trim().toLowerCase()
@@ -70,7 +75,188 @@ router.post('/register', async (req, res) => {
     return res.status(500).json({ message: 'Could not create account' })
   }
 
-  res.status(201).json({ token: signToken(user), user: publicUser(user) })
+  // If Brevo fails the account still exists; the user can use "resend".
+  let emailSent = true
+  let emailError = null
+  try {
+    await issueVerification(user)
+  } catch (err) {
+    emailSent = false
+    emailError = err.message
+    console.error('Send verification error:', err)
+  }
+
+  res.status(201).json({
+    message: emailSent
+      ? 'Account created. Check your email for the verification code.'
+      : 'Account created, but we could not send the verification email. Please request a new code.',
+    emailSent,
+    // Dev only: shows why the email failed. Hidden in production.
+    ...(process.env.NODE_ENV !== 'production' && emailError ? { emailError } : {}),
+    user: publicUser(user),
+  })
+})
+
+// POST /api/auth/verify-email
+// Body: { email, code }  (the 6-digit code from the email)
+router.post('/verify-email', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase()
+  const code = String(req.body?.code || '').trim()
+
+  if (!email || !code) {
+    return res.status(400).json({ message: 'Email and code are required' })
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return res.status(400).json({ message: 'Code must be 6 digits' })
+  }
+
+  try {
+    const result = await consumeVerification(email, code)
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        return res.status(429).json({
+          code: 'TOO_MANY_ATTEMPTS',
+          message: 'Too many wrong attempts. Please request a new code.',
+        })
+      }
+      if (result.reason === 'expired') {
+        return res.status(400).json({
+          code: 'CODE_EXPIRED',
+          message: 'Code has expired. Please request a new one.',
+        })
+      }
+      return res.status(400).json({
+        code: 'INVALID_CODE',
+        message: 'Invalid code',
+        ...(result.attemptsLeft !== undefined ? { attemptsLeft: result.attemptsLeft } : {}),
+      })
+    }
+    res.json({ message: 'Email verified. You can now log in.' })
+  } catch (err) {
+    console.error('Verify email error:', err)
+    res.status(500).json({ message: 'Could not verify email' })
+  }
+})
+
+// POST /api/auth/resend-verification
+// Body: { email }
+// Always answers the same way so it can't be used to discover registered emails.
+router.post('/resend-verification', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase()
+  const generic = { message: 'If that account exists and is not verified, a new code has been sent.' }
+
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ message: 'Invalid email address' })
+
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, name, email, email_verified')
+      .eq('email', email)
+      .maybeSingle()
+    if (error) throw error
+
+    if (user && !user.email_verified) {
+      if (await onCooldown(user.id)) {
+        return res.status(429).json({ message: 'Please wait a minute before requesting another code' })
+      }
+      await issueVerification(user)
+    }
+    res.json(generic)
+  } catch (err) {
+    console.error('Resend verification error:', err)
+    res.status(500).json({ message: 'Could not send verification code' })
+  }
+})
+
+// POST /api/auth/forgot-password
+// Body: { email }
+// Emails a 6-digit reset code. Always answers the same way (even for unknown emails
+// or during the cooldown) so it can't be used to discover registered emails.
+router.post('/forgot-password', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase()
+  const generic = { message: 'If that email is registered, a password reset code has been sent.' }
+
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ message: 'Invalid email address' })
+
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .eq('email', email)
+      .maybeSingle()
+    if (error) throw error
+
+    if (user && !(await onResetCooldown(user.id))) {
+      try {
+        await issuePasswordReset(user)
+      } catch (err) {
+        // Don't reveal the failure to the caller; just log it.
+        console.error('Send password reset error:', err)
+      }
+    }
+    res.json(generic)
+  } catch (err) {
+    console.error('Forgot password error:', err)
+    res.status(500).json({ message: 'Could not process request' })
+  }
+})
+
+// POST /api/auth/reset-password
+// Body: { email, code, newPassword }
+// Sets a new password if the code is right. All older logins stop working.
+router.post('/reset-password', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase()
+  const code = String(req.body?.code || '').trim()
+  const newPassword = String(req.body?.newPassword || '')
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ message: 'Email, code and new password are required' })
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return res.status(400).json({ message: 'Code must be 6 digits' })
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ message: 'New password must be at least 8 characters' })
+  }
+
+  try {
+    const result = await consumePasswordReset(email, code)
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        return res.status(429).json({
+          code: 'TOO_MANY_ATTEMPTS',
+          message: 'Too many wrong attempts. Please request a new code.',
+        })
+      }
+      if (result.reason === 'expired') {
+        return res.status(400).json({
+          code: 'CODE_EXPIRED',
+          message: 'Code has expired. Please request a new one.',
+        })
+      }
+      return res.status(400).json({
+        code: 'INVALID_CODE',
+        message: 'Invalid code',
+        ...(result.attemptsLeft !== undefined ? { attemptsLeft: result.attemptsLeft } : {}),
+      })
+    }
+
+    const password_hash = await bcrypt.hash(newPassword, 10)
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash, password_changed_at: new Date().toISOString() })
+      .eq('id', result.userId)
+
+    if (updateError) {
+      console.error('Reset password error:', updateError)
+      return res.status(500).json({ message: 'Could not reset password' })
+    }
+
+    res.json({ message: 'Password updated. Please log in with your new password.' })
+  } catch (err) {
+    console.error('Reset password error:', err)
+    res.status(500).json({ message: 'Could not reset password' })
+  }
 })
 
 // POST /api/auth/login
@@ -97,6 +283,15 @@ router.post('/login', async (req, res) => {
   const valid = user && (await bcrypt.compare(password, user.password_hash))
   if (!valid) {
     return res.status(401).json({ message: 'Invalid email or password' })
+  }
+
+  // Checked only after the password is correct, so it doesn't leak which emails exist.
+  // 403 (not 401) so the frontend doesn't treat it as an expired session.
+  if (!user.email_verified) {
+    return res.status(403).json({
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Please verify your email before logging in',
+    })
   }
 
   res.json({ token: signToken(user), user: publicUser(user) })
@@ -214,7 +409,7 @@ router.delete('/account', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Password is incorrect' })
   }
 
-  // Cascades to assessments, predictions and prediction_careers
+  // Cascades to assessments, predictions, prediction_careers and email_verifications
   const { error: deleteError } = await supabase.from('users').delete().eq('id', user.id)
 
   if (deleteError) {

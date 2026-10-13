@@ -1,9 +1,10 @@
-// server/middleware/auth.js  (REPLACE the previous version)
+// backend/src/middleware/auth.js  (REPLACE the previous version)
 
 import jwt from 'jsonwebtoken'
 import { supabase } from '../config/supabase.js'
 
-// Requires a valid, non-logged-out "Authorization: Bearer <token>" header.
+// Requires a valid, non-logged-out "Authorization: Bearer <token>" header
+// AND a verified email. Unverified accounts can't use any protected route.
 export async function requireAuth(req, res, next) {
   const [scheme, token] = (req.headers.authorization || '').split(' ')
 
@@ -25,6 +26,7 @@ export async function requireAuth(req, res, next) {
   }
 
   try {
+    // Logged-out (revoked) token?
     const { data: revoked, error } = await supabase
       .from('revoked_tokens')
       .select('jti')
@@ -35,8 +37,35 @@ export async function requireAuth(req, res, next) {
     if (revoked) {
       return res.status(401).json({ message: 'Session has been logged out' })
     }
+
+    // Account still exists, password unchanged since login, and email verified?
+    // Checked live, so it also covers old tokens and deleted accounts.
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, email_verified, password_changed_at')
+      .eq('id', payload.sub)
+      .maybeSingle()
+
+    if (userError) throw userError
+    if (!user) {
+      return res.status(401).json({ message: 'Account no longer exists' })
+    }
+    // A password reset invalidates every token issued before it
+    if (
+      user.password_changed_at &&
+      payload.iat < Math.floor(new Date(user.password_changed_at).getTime() / 1000)
+    ) {
+      return res.status(401).json({ message: 'Password was changed. Please log in again.' })
+    }
+    // 403 (not 401) so the frontend doesn't treat it as an expired session
+    if (!user.email_verified) {
+      return res.status(403).json({
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email to use this service',
+      })
+    }
   } catch (err) {
-    console.error('Token revocation check error:', err)
+    console.error('Auth check error:', err)
     return res.status(500).json({ message: 'Could not verify session' })
   }
 
