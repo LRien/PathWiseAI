@@ -1,22 +1,46 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { fmtDate } from '../../Data/predictions'
-import { getPredictions } from '../../Data/predictionStore'
+import { getPrediction, selectCareer } from '../../api/predictions'
 
 const RANK_COLORS = ['#2f80e0', '#f2c230', '#e0404a']
+
+const fmtDate = (iso) =>
+  new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+
+const list = (v) => (Array.isArray(v) ? v : [])
+const str = (v) => (typeof v === 'string' ? v : '')
 
 const PredictionDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
+
+  const [pred, setPred] = useState(null)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState(null)
   const [showAvoid, setShowAvoid] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState('')
 
-  const pred = getPredictions().find((p) => String(p.id) === id)
+  useEffect(() => {
+    let cancelled = false
+    setPred(null)
+    setError('')
+    getPrediction(id)
+      .then((p) => {
+        if (cancelled) return
+        setPred(p)
+        setSelected(p.selectedCareer || null) // remembers an earlier choice
+      })
+      .catch((e) => !cancelled && setError(e.message))
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
-  if (!pred) {
+  if (error) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-neutral-600">That prediction could not be found.</p>
+        <p className="text-sm text-neutral-600">{error === 'Prediction not found' ? 'That prediction could not be found.' : error}</p>
         <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
           ← Back to history
         </Link>
@@ -24,10 +48,23 @@ const PredictionDetail = () => {
     )
   }
 
-  const goToRoadmap = () => {
+  if (!pred) return <p className="text-sm text-neutral-500">Loading prediction...</p>
+
+  const { assessment, insights } = pred
+
+  const goToRoadmap = async () => {
     if (!selected) return
-    localStorage.setItem('selectedCareer', JSON.stringify({ predictionId: pred.id, career: selected }))
-    navigate('/dashboard/roadmap', { state: { predictionId: pred.id, career: selected } })
+    setSaving(true)
+    setActionError('')
+    try {
+      await selectCareer(pred.id, selected)
+      localStorage.setItem('selectedCareer', JSON.stringify({ predictionId: pred.id, career: selected }))
+      navigate('/dashboard/roadmap', { state: { predictionId: pred.id } })
+    } catch (e) {
+      setActionError(e.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -38,26 +75,36 @@ const PredictionDetail = () => {
         </Link>
         <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">Your top 3 careers</h1>
         <p className="mt-1.5 text-sm text-neutral-600">
-          Prediction made on {fmtDate(pred.createdAt)}. Select one to see the roadmap for it.
+          Prediction #{pred.number} made on {fmtDate(pred.createdAt)}. Select one to see the roadmap for it.
         </p>
       </header>
 
       {/* inputs used */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-[#e6d8c3] bg-white/60 px-4 py-3 text-xs">
-        <span className="rounded-full bg-[#0b0b2b] px-3 py-1 font-extrabold text-white">{pred.input.mbti}</span>
-        <span className="font-semibold text-neutral-700">{pred.input.degree}</span>
+        {assessment.mbti && (
+          <span className="rounded-full bg-[#0b0b2b] px-3 py-1 font-extrabold text-white">{assessment.mbti}</span>
+        )}
+        {assessment.degreeProgram && <span className="font-semibold text-neutral-700">{assessment.degreeProgram}</span>}
         <span className="flex flex-wrap gap-1.5">
-          {pred.input.skills.map((s) => (
+          {list(assessment.skills).map((s) => (
             <span key={s} className="rounded-full border border-[#e0d1ba] bg-white px-2.5 py-0.5 text-neutral-600">{s}</span>
           ))}
         </span>
       </div>
 
+      {(str(insights.personality) || str(insights.preferenceNote)) && (
+        <div className="space-y-2 rounded-2xl border border-[#e6d8c3] bg-[#fbf6ee] px-5 py-4 text-sm text-neutral-700">
+          {str(insights.personality) && <p>{insights.personality}</p>}
+          {str(insights.preferenceNote) && <p className="text-neutral-600">{insights.preferenceNote}</p>}
+        </div>
+      )}
+
       {/* top 3 */}
       <div className="grid gap-4 lg:grid-cols-3" role="radiogroup" aria-label="Choose a career">
-        {pred.topCareers.map((c, i) => {
+        {pred.recommended.map((c, i) => {
           const isSel = selected === c.title
-          const color = RANK_COLORS[i]
+          const color = RANK_COLORS[i] || RANK_COLORS[0]
+          const reasons = list(c.reasons).map((r) => (typeof r === 'string' ? r : r?.text ?? r?.reason ?? '')).filter(Boolean)
           return (
             <button
               key={c.title}
@@ -79,19 +126,23 @@ const PredictionDetail = () => {
                   </span>
                   <h3 className="text-lg font-extrabold leading-tight text-black">{c.title}</h3>
                 </div>
-                <span className="shrink-0 text-2xl font-black text-black">{c.score}%</span>
+                <span className="shrink-0 text-2xl font-black text-black">{c.matchPercent}%</span>
               </div>
 
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#e8dcc8]">
-                <div className="h-full rounded-full" style={{ width: `${c.score}%`, background: color }} />
+                <div className="h-full rounded-full" style={{ width: `${c.matchPercent}%`, background: color }} />
               </div>
 
               <p className="mt-4 text-xs font-bold uppercase tracking-wide text-neutral-500">Why this fits</p>
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {c.reasons.map((r) => (
-                  <li key={r} className="rounded-full border border-[#e0d1ba] bg-white px-3 py-1 text-xs text-neutral-700">{r}</li>
-                ))}
-              </ul>
+              {reasons.length > 0 ? (
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {reasons.map((r) => (
+                    <li key={r} className="rounded-full border border-[#e0d1ba] bg-white px-3 py-1 text-xs text-neutral-700">{r}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs leading-relaxed text-neutral-700">{str(c.why) || str(c.description)}</p>
+              )}
 
               <span
                 className={`mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wide ${
@@ -124,41 +175,53 @@ const PredictionDetail = () => {
         <button
           type="button"
           onClick={goToRoadmap}
-          disabled={!selected}
+          disabled={!selected || saving}
           className="rounded-full bg-[#0b0b2b] px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          View roadmap →
+          {saving ? 'Saving...' : 'View roadmap →'}
         </button>
       </div>
 
+      {actionError && (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
+
       {/* avoid */}
-      <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
-        <button
-          type="button"
-          onClick={() => setShowAvoid((v) => !v)}
-          aria-expanded={showAvoid}
-          className="flex w-full items-center justify-between text-left"
-        >
-          <span>
-            <span className="block text-lg font-extrabold text-black">Careers to avoid</span>
-            <span className="block text-xs text-neutral-500">Fields that are a weaker fit for this profile</span>
-          </span>
-          <span className="text-xl font-bold text-neutral-500">{showAvoid ? '−' : '+'}</span>
-        </button>
-        {showAvoid && (
-          <ul className="mt-4 divide-y divide-[#e6d8c3]">
-            {pred.avoid.map((a) => (
-              <li key={a.title} className="flex items-start gap-3 py-3">
-                <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#e0404a]" />
-                <div>
-                  <p className="text-sm font-bold text-black">{a.title}</p>
-                  <p className="text-xs text-neutral-600">{a.reason}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {pred.avoid.length > 0 && (
+        <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowAvoid((v) => !v)}
+            aria-expanded={showAvoid}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <span>
+              <span className="block text-lg font-extrabold text-black">Careers to avoid</span>
+              <span className="block text-xs text-neutral-500">Fields that are a weaker fit for this profile</span>
+            </span>
+            <span className="text-xl font-bold text-neutral-500">{showAvoid ? '−' : '+'}</span>
+          </button>
+          {showAvoid && (
+            <ul className="mt-4 divide-y divide-[#e6d8c3]">
+              {pred.avoid.map((a) => (
+                <li key={a.title} className="flex items-start gap-3 py-3">
+                  <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#e0404a]" />
+                  <div>
+                    <p className="text-sm font-bold text-black">{a.title}</p>
+                    <p className="text-xs text-neutral-600">{str(a.why) || str(a.description)}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {pred.insights.disclaimer && str(pred.insights.disclaimer) && (
+        <p className="text-[11px] leading-relaxed text-neutral-500">{pred.insights.disclaimer}</p>
+      )}
     </div>
   )
 }

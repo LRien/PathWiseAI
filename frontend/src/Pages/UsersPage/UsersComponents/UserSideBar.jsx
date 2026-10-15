@@ -108,7 +108,7 @@ const UserSideBar = ({ onNavigate }) => {
           Changed your type or skills? Run the assessment again.
         </p>
         <Link
-          to="/assessment"
+          to="/assessment-test"
           onClick={onNavigate}
           className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-full bg-[#0b0b2b] px-5 py-2 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a]"
         >

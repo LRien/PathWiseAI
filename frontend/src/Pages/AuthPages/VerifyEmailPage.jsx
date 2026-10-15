@@ -1,0 +1,180 @@
+import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { verifyEmail, resendVerification } from '../../api/auth' // adjust path if needed
+
+// Palette: page bg #F0E6D6 | card #FAF6EF | input #F3EADB | border #E2D6C3 | navy #0A0A2C
+const autofillFix =
+  '[&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_#F3EADB] [&:-webkit-autofill]:[-webkit-text-fill-color:#0A0A2C]'
+
+const inputClass = `w-full rounded-2xl border border-[#E2D6C3] bg-[#F3EADB] px-4 py-3.5 text-sm text-[#0A0A2C] placeholder-[#8C8576] outline-none transition focus:border-[#0A0A2C] focus:bg-[#FAF6EF] focus:ring-2 focus:ring-[#0A0A2C]/15 ${autofillFix}`
+
+const labelClass = 'mb-2 block text-sm font-semibold text-[#0A0A2C]'
+
+const COOLDOWN_SECONDS = 60
+
+const VerifyEmailPage = () => {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const initialEmail = location.state?.email || ''
+  const emailSent = location.state?.emailSent !== false
+
+  const [email, setEmail] = useState(initialEmail)
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [info, setInfo] = useState(
+    initialEmail
+      ? emailSent
+        ? `We sent a 6-digit code to ${initialEmail}.`
+        : 'We could not send the email. Tap "Resend code" to try again.'
+      : ''
+  )
+  const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setInfo('')
+
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the 6-digit code.')
+      return
+    }
+
+    setLoading(true)
+    try {
+      // verifyEmail() saves the token + user when the backend returns them
+      const data = await verifyEmail(email.trim().toLowerCase(), code)
+
+      if (data.token) {
+        navigate('/dashboard', { replace: true }) // logged in automatically
+      } else {
+        navigate('/login', { state: { message: 'Email verified. You can now log in.' } })
+      }
+    } catch (err) {
+      let msg = err.message
+      if (err.code === 'INVALID_CODE' && err.attemptsLeft !== undefined) {
+        msg += ` (${err.attemptsLeft} attempt${err.attemptsLeft === 1 ? '' : 's'} left)`
+      }
+      setError(msg || 'Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResend = async () => {
+    setError('')
+    setInfo('')
+    if (!email.trim()) {
+      setError('Enter your email first.')
+      return
+    }
+
+    try {
+      const data = await resendVerification(email.trim().toLowerCase())
+      setInfo(data.message)
+      setCooldown(COOLDOWN_SECONDS)
+    } catch (err) {
+      if (err.status === 429) setCooldown(COOLDOWN_SECONDS)
+      setError(err.message)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F0E6D6] px-4 py-10">
+      <div className="mx-auto mb-6 max-w-xl text-center">
+        <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight text-[#0A0A2C]">
+          Check your email.
+        </h1>
+        <p className="mt-3 text-sm text-[#5B564B]">Enter the code to verify your account.</p>
+      </div>
+
+      <div className="w-full max-w-[480px] rounded-3xl bg-[#FAF6EF] p-8 shadow-[0_2px_16px_rgba(60,45,20,0.08)]">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {!initialEmail && (
+            <div>
+              <label htmlFor="email" className={labelClass}>
+                Email Address
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email address..."
+                className={inputClass}
+              />
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="code" className={labelClass}>
+              Verification Code
+            </label>
+            <input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="123456"
+              className={`${inputClass} text-center text-xl tracking-[0.5em]`}
+            />
+          </div>
+
+          {info && (
+            <div
+              role="status"
+              className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
+            >
+              {info}
+            </div>
+          )}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? 'Verifying...' : 'Verify Email'}
+          </button>
+        </form>
+
+        <div className="mt-6 flex flex-col items-center gap-2 text-xs text-[#5B564B]">
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={cooldown > 0}
+            className="font-semibold text-[#0A0A2C] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+          >
+            {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+          </button>
+          <a href="/login" className="hover:underline">
+            Back to sign in
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default VerifyEmailPage

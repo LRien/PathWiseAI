@@ -1,4 +1,4 @@
-// backend/src/routes/auth.js  (REPLACE the previous version)
+// backend/src/routes/auth.js  (REPLACE your current version)
 
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
@@ -12,6 +12,13 @@ import { issuePasswordReset, consumePasswordReset, onResetCooldown } from '../se
 const router = Router()
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Password rules (keep in sync with the frontend PasswordChecklist):
+// 8+ characters, one uppercase, one lowercase, one number, one special character
+const getPasswordError = (p) =>
+  p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /\d/.test(p) && /[^A-Za-z0-9\s]/.test(p)
+    ? null
+    : 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a special character'
 
 // jwtid gives every token a unique id so it can be revoked on logout
 const signToken = (user) =>
@@ -41,6 +48,29 @@ async function revokeToken(reqUser) {
   if (error && error.code !== '23505') throw error
 }
 
+// Shared by verify-email and reset-password so both answer wrong codes the same way
+function sendCodeFailure(res, result) {
+  if (result.reason === 'locked') {
+    return res.status(429).json({
+      code: 'TOO_MANY_ATTEMPTS',
+      message: 'Too many wrong attempts. Please request a new code.',
+    })
+  }
+  if (result.reason === 'expired') {
+    return res.status(400).json({
+      code: 'CODE_EXPIRED',
+      message: 'Code has expired. Please request a new one.',
+    })
+  }
+  return res.status(400).json({
+    code: 'INVALID_CODE',
+    message: 'Invalid code',
+    ...(result.attemptsLeft !== undefined ? { attemptsLeft: result.attemptsLeft } : {}),
+  })
+}
+
+const isDev = () => process.env.NODE_ENV !== 'production'
+
 // POST /api/auth/register
 // Creates the account (unverified) and emails a 6-digit code via Brevo.
 // No JWT is issued until the email is verified.
@@ -55,8 +85,9 @@ router.post('/register', async (req, res) => {
   if (!EMAIL_RE.test(email)) {
     return res.status(400).json({ message: 'Invalid email address' })
   }
-  if (password.length < 8) {
-    return res.status(400).json({ message: 'Password must be at least 8 characters' })
+  const passwordError = getPasswordError(password)
+  if (passwordError) {
+    return res.status(400).json({ message: passwordError })
   }
 
   const password_hash = await bcrypt.hash(password, 10)
@@ -92,13 +123,14 @@ router.post('/register', async (req, res) => {
       : 'Account created, but we could not send the verification email. Please request a new code.',
     emailSent,
     // Dev only: shows why the email failed. Hidden in production.
-    ...(process.env.NODE_ENV !== 'production' && emailError ? { emailError } : {}),
+    ...(isDev() && emailError ? { emailError } : {}),
     user: publicUser(user),
   })
 })
 
 // POST /api/auth/verify-email
 // Body: { email, code }  (the 6-digit code from the email)
+// On success the user is logged in right away: returns { token, user }.
 router.post('/verify-email', async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase()
   const code = String(req.body?.code || '').trim()
@@ -112,26 +144,22 @@ router.post('/verify-email', async (req, res) => {
 
   try {
     const result = await consumeVerification(email, code)
-    if (!result.ok) {
-      if (result.reason === 'locked') {
-        return res.status(429).json({
-          code: 'TOO_MANY_ATTEMPTS',
-          message: 'Too many wrong attempts. Please request a new code.',
-        })
-      }
-      if (result.reason === 'expired') {
-        return res.status(400).json({
-          code: 'CODE_EXPIRED',
-          message: 'Code has expired. Please request a new one.',
-        })
-      }
-      return res.status(400).json({
-        code: 'INVALID_CODE',
-        message: 'Invalid code',
-        ...(result.attemptsLeft !== undefined ? { attemptsLeft: result.attemptsLeft } : {}),
-      })
-    }
-    res.json({ message: 'Email verified. You can now log in.' })
+    if (!result.ok) return sendCodeFailure(res, result)
+
+    // The code proves they own the email, so log them in. Fetched AFTER the
+    // verification so email_verified comes back as true.
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle()
+    if (userError || !user) throw userError || new Error('User not found after verification')
+
+    res.json({
+      message: 'Email verified.',
+      token: signToken(user),
+      user: publicUser(user),
+    })
   } catch (err) {
     console.error('Verify email error:', err)
     res.status(500).json({ message: 'Could not verify email' })
@@ -172,11 +200,14 @@ router.post('/resend-verification', async (req, res) => {
 // Body: { email }
 // Emails a 6-digit reset code. Always answers the same way (even for unknown emails
 // or during the cooldown) so it can't be used to discover registered emails.
+// In development only, the response and terminal also say WHY nothing was sent.
 router.post('/forgot-password', async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase()
   const generic = { message: 'If that email is registered, a password reset code has been sent.' }
 
   if (!EMAIL_RE.test(email)) return res.status(400).json({ message: 'Invalid email address' })
+
+  let debug = null
 
   try {
     const { data: user, error } = await supabase
@@ -186,15 +217,22 @@ router.post('/forgot-password', async (req, res) => {
       .maybeSingle()
     if (error) throw error
 
-    if (user && !(await onResetCooldown(user.id))) {
+    if (!user) {
+      debug = 'No account with this email'
+    } else if (await onResetCooldown(user.id)) {
+      debug = 'Cooldown active: a code was already sent in the last minute'
+    } else {
       try {
         await issuePasswordReset(user)
       } catch (err) {
-        // Don't reveal the failure to the caller; just log it.
+        // Don't reveal the failure to the caller in production; just log it.
+        debug = `Send failed: ${err.message}`
         console.error('Send password reset error:', err)
       }
     }
-    res.json(generic)
+
+    if (isDev() && debug) console.log('[forgot-password]', debug)
+    res.json({ ...generic, ...(isDev() && debug ? { debug } : {}) })
   } catch (err) {
     console.error('Forgot password error:', err)
     res.status(500).json({ message: 'Could not process request' })
@@ -215,31 +253,14 @@ router.post('/reset-password', async (req, res) => {
   if (!/^\d{6}$/.test(code)) {
     return res.status(400).json({ message: 'Code must be 6 digits' })
   }
-  if (newPassword.length < 8) {
-    return res.status(400).json({ message: 'New password must be at least 8 characters' })
+  const newPasswordError = getPasswordError(newPassword)
+  if (newPasswordError) {
+    return res.status(400).json({ message: newPasswordError })
   }
 
   try {
     const result = await consumePasswordReset(email, code)
-    if (!result.ok) {
-      if (result.reason === 'locked') {
-        return res.status(429).json({
-          code: 'TOO_MANY_ATTEMPTS',
-          message: 'Too many wrong attempts. Please request a new code.',
-        })
-      }
-      if (result.reason === 'expired') {
-        return res.status(400).json({
-          code: 'CODE_EXPIRED',
-          message: 'Code has expired. Please request a new one.',
-        })
-      }
-      return res.status(400).json({
-        code: 'INVALID_CODE',
-        message: 'Invalid code',
-        ...(result.attemptsLeft !== undefined ? { attemptsLeft: result.attemptsLeft } : {}),
-      })
-    }
+    if (!result.ok) return sendCodeFailure(res, result)
 
     const password_hash = await bcrypt.hash(newPassword, 10)
     const { error: updateError } = await supabase
@@ -337,8 +358,9 @@ router.patch('/password', requireAuth, async (req, res) => {
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ message: 'Current and new password are required' })
   }
-  if (newPassword.length < 8) {
-    return res.status(400).json({ message: 'New password must be at least 8 characters' })
+  const newPasswordError = getPasswordError(newPassword)
+  if (newPasswordError) {
+    return res.status(400).json({ message: newPasswordError })
   }
   if (newPassword === currentPassword) {
     return res.status(400).json({ message: 'New password must be different from the current one' })

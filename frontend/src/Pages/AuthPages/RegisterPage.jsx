@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+import { Link, useNavigate } from 'react-router-dom'
+import { register } from '../../api/auth' // adjust the path if your folders differ
+import PasswordChecklist, { isStrongPassword, PASSWORD_RULES_MESSAGE } from './PasswordChecklist'
 
 const EyeIcon = ({ off }) => (
   <svg
@@ -19,15 +19,6 @@ const EyeIcon = ({ off }) => (
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
     <circle cx="12" cy="12" r="3" />
     {off && <path d="M4 4l16 16" />}
-  </svg>
-)
-
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-    <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z" />
-    <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z" />
-    <path fill="#FBBC05" d="M10.5 28.7c-.5-1.5-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z" />
-    <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z" />
   </svg>
 )
 
@@ -122,8 +113,8 @@ const RegisterPage = () => {
     e.preventDefault()
     setError('')
 
-    if (form.password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    if (!isStrongPassword(form.password)) {
+      setError(PASSWORD_RULES_MESSAGE)
       return
     }
     if (form.password !== form.confirmPassword) {
@@ -134,31 +125,16 @@ const RegisterPage = () => {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim(),
-          email: form.email.trim(),
-          password: form.password,
-        }),
+      const email = form.email.trim().toLowerCase()
+      // Backend expects a single "name" field
+      const name = `${form.firstName.trim()} ${form.lastName.trim()}`.trim()
+
+      const data = await register({ name, email, password: form.password })
+
+      // No token yet: the user must enter the 6-digit code sent to their email.
+      navigate('/verify-email', {
+        state: { email, emailSent: data.emailSent !== false },
       })
-
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok) {
-        throw new Error(data.message || data.error || 'Could not create your account.')
-      }
-
-      // If the backend logs the user in on register, keep the token and go straight in.
-      if (data.token) {
-        localStorage.setItem('token', data.token)
-        if (data.user) localStorage.setItem('user', JSON.stringify(data.user))
-        navigate('/dashboard')
-      } else {
-        navigate('/login')
-      }
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.')
     } finally {
@@ -166,14 +142,17 @@ const RegisterPage = () => {
     }
   }
 
-  const handleGoogleSignup = () => {
-    // Redirect to your backend's Google OAuth route (or call Supabase OAuth here)
-    window.location.href = `${API_URL}/api/auth/google`
-  }
-
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F0E6D6] px-4 py-10">
-      <div className="mx-auto mb-6 max-w-xl text-center">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#F0E6D6] px-4 py-10">
+      {/* back to the home page */}
+      <Link
+        to="/"
+        className="absolute left-4 top-4 inline-flex items-center gap-1.5 rounded-full border border-[#E2D6C3] bg-[#FAF6EF] px-4 py-2 text-xs font-bold text-[#0A0A2C] transition hover:border-[#0A0A2C] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/20 sm:left-8 sm:top-8"
+      >
+        <span aria-hidden="true">←</span> Back to home
+      </Link>
+
+      <div className="mx-auto mb-6 mt-10 max-w-xl text-center sm:mt-0">
         <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight text-[#0A0A2C]">
           {quote.title}
         </h1>
@@ -181,21 +160,6 @@ const RegisterPage = () => {
       </div>
 
       <div className="w-full max-w-[480px] rounded-3xl bg-[#FAF6EF] p-8 shadow-[0_2px_16px_rgba(60,45,20,0.08)]">
-        <button
-          type="button"
-          onClick={handleGoogleSignup}
-          className="flex w-full items-center justify-center gap-3 rounded-full border border-[#E2D6C3] bg-[#FAF6EF] py-3 text-sm font-semibold text-[#0A0A2C] transition hover:bg-[#F3EADB]"
-        >
-          <GoogleIcon />
-          Continue with Google
-        </button>
-
-        <div className="my-6 flex items-center gap-3">
-          <span className="h-px flex-1 bg-[#E2D6C3]" />
-          <span className="text-xs text-[#8C8576]">or register with email</span>
-          <span className="h-px flex-1 bg-[#E2D6C3]" />
-        </div>
-
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>
@@ -257,8 +221,10 @@ const RegisterPage = () => {
             show={showPassword}
             onToggle={() => setShowPassword((s) => !s)}
             autoComplete="new-password"
-            placeholder="At least 8 characters"
+            placeholder="Create a strong password"
           />
+
+          <PasswordChecklist password={form.password} />
 
           <PasswordField
             id="confirmPassword"
