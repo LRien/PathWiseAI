@@ -4,6 +4,10 @@
 
 :root {
   color-scheme: light dark;
+  --nav-h: 94px; /* height of the fixed navbar, the page is pushed down by this much */
+}
+html {
+  scroll-padding-top: var(--nav-h); /* anchor links won't hide behind the bar */
 }
 html,
 body {
@@ -14,6 +18,9 @@ body{
   background-color: #F2E7D4;
   color: #0a0a0a;
 }
+.public-page {
+  padding-top: var(--nav-h);
+} 
 
 
 
@@ -29,22 +36,33 @@ body{
   --nav-panel: rgba(255, 255, 255, 0.6);
   --nav-focus: #1f77c9;
   background-color:#F2E7D4;
-  position: sticky;
+  /* fixed: stays at the top of the screen, slides away on scroll down */
+  position: fixed;
   top: 0;
-  z-index: 50;
-  transition: transform 0.3s ease;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  border-bottom: 1px solid transparent;
+  transition: transform 0.3s ease, box-shadow 0.25s ease, border-color 0.25s ease;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  margin: 0 auto;
+  margin: 0;
   padding: 0 clamp(20px, 5vw, 56px);
   font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
   color: var(--nav-ink);
   -webkit-font-smoothing: antialiased;
 }
 
+/* hidden while scrolling down, comes back when scrolling up */
 .navbar--hidden {
   transform: translateY(-100%);
+}
+
+/* soft shadow once the page has scrolled (or the mobile menu is open) */
+.navbar--scrolled {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
 }
 
 .navbar *,
@@ -212,6 +230,10 @@ body{
 
 /* ---------- Responsive ---------- */
 @media (max-width: 767px) {
+  :root {
+    --nav-h: 84px; /* shorter bar on phones (20px + 44px button + 20px) */
+  }
+
   .navbar__bar {
     padding: 20px 0;
   }
@@ -245,6 +267,7 @@ body{
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .navbar,
   .navbar__burger span,
   .navbar__btn,
   .navbar__links a {

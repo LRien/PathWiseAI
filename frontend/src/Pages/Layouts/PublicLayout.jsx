@@ -8,7 +8,9 @@ import Footer from '../../Components/Footer' // adjust to where your Footer is
 const PublicLayout = () => (
   <>
     <Navbar />
-    <Outlet />
+    <div className="public-page">
+      <Outlet />
+    </div>
     <Footer />
   </>
 )

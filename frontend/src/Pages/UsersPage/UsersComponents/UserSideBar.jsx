@@ -1,6 +1,9 @@
 import React from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 
+/* Must match the key your login code and Navbar.jsx use */
+const TOKEN_KEY = 'token'
+
 /* ---------- tiny inline icons (no icon library needed) ---------- */
 const Icon = ({ children }) => (
   <svg
@@ -62,7 +65,7 @@ const ICONS = {
 const NAV = [
   { to: '/dashboard/recommendations', label: 'Recommendations', icon: 'recommendations' },
   { to: '/dashboard/roadmap', label: 'Career roadmap', icon: 'roadmap' },
-  { to: '/dashboard/settings', label: 'Settings', icon: 'settings' }, // fixed: was /dashboard/setting
+  { to: '/dashboard/settings', label: 'Settings', icon: 'settings' },
 ]
 
 const itemCls = 'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition'
@@ -71,9 +74,30 @@ const itemCls = 'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm
 const UserSideBar = ({ onNavigate }) => {
   const navigate = useNavigate()
 
-  const logout = () => {
-    // TODO: clear your auth state / token here
-    navigate('/login')
+  const logout = async () => {
+    const token = localStorage.getItem(TOKEN_KEY)
+
+    // Best effort: tell the backend to revoke the token.
+    // Adjust the URL to your real logout route, or delete this block if you have none.
+    try {
+      if (token) {
+        await fetch(`${import.meta.env.VITE_API_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      }
+    } catch {
+      // ignore network errors, we still log out locally
+    }
+
+    // Clear everything auth-related on the client
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem('user') // remove if you don't store this
+    sessionStorage.clear()
+
+    onNavigate?.()
+    // replace: true so the Back button can't return to the dashboard
+    navigate('/login', { replace: true })
   }
 
   return (
