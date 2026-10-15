@@ -1,4 +1,4 @@
-// server/server.js  (REPLACE your existing server.js)
+// backend/server.js  (REPLACE your existing server.js)
 
 import 'dotenv/config'
 import express from 'express'
@@ -17,30 +17,37 @@ const app = express()
 
 /* ---------- CORS ----------
    CLIENT_URL can hold ONE or MANY origins, separated by commas.
-   Local .env:  CLIENT_URL=http://localhost:5173,https://your-app.vercel.app
-   Render env:  CLIENT_URL=https://your-app.vercel.app,http://localhost:5173
-   (no trailing slashes, no spaces needed)
+   Example: https://path-wise-ai-gules.vercel.app,http://localhost:5173
+   (no trailing slashes)
 */
 const allowedOrigins = (process.env.CLIENT_URL || '')
   .split(',')
   .map((o) => o.trim().replace(/\/$/, ''))
   .filter(Boolean)
 
-// always allow common local dev ports so localhost works even if CLIENT_URL is only the Vercel link
+// always allow local dev so localhost works from your own computer
 const localOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
 ]
 
+// Vercel preview links for this project, e.g.
+// https://path-wise-aa0dini9w-leonprojectyeet.vercel.app
+const vercelPreview = /^https:\/\/path-wise-ai-[a-z0-9-]+-leonprojectyeet\.vercel\.app$/
+
 app.use(
   cors({
     origin(origin, callback) {
-      // allow tools without an Origin header (Postman, curl, browser address bar)
+      // allow tools without an Origin header (Postman, curl, address bar)
       if (!origin) return callback(null, true)
-      if ([...allowedOrigins, ...localOrigins].includes(origin)) {
-        return callback(null, true)
-      }
+
+      const isAllowed =
+        [...allowedOrigins, ...localOrigins].includes(origin) ||
+        vercelPreview.test(origin)
+
+      if (isAllowed) return callback(null, true)
+
       console.warn('Blocked by CORS:', origin)
       return callback(new Error(`Origin not allowed by CORS: ${origin}`))
     },
@@ -80,7 +87,9 @@ app.use('/api/predictions', predictionRoutes)
 
 /* ---------- 404 for unknown routes ---------- */
 app.use((req, res) => {
-  res.status(404).json({ ok: false, message: `Route not found: ${req.method} ${req.originalUrl}` })
+  res
+    .status(404)
+    .json({ ok: false, message: `Route not found: ${req.method} ${req.originalUrl}` })
 })
 
 /* ---------- Start ---------- */
