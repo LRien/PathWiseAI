@@ -10,7 +10,12 @@ import UserSideBar from './UsersComponents/UserSideBar'
   and only remove the old sidebar wrapper + SidebarShowButton.
 */
 const UserLayout = () => (
-  <div className="min-h-screen bg-[#f3e7d6]">
+  /*
+    The layout owns its own scroll area: a full-screen box that scrolls by itself.
+    data-lenis-prevent tells a smooth-scroll library (Lenis) to leave it alone, and
+    it also keeps scrolling working if a global style locks the page body.
+  */
+  <div data-lenis-prevent className="h-screen overflow-y-auto overscroll-contain bg-[#f3e7d6]">
     <UserSideBar />
     {/* pt-24 leaves room for the floating triple-dot button so it never covers the content */}
     <main className="mx-auto w-full max-w-[1280px] px-5 pb-16 pt-24 sm:px-8 lg:px-10">
