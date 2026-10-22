@@ -16,3 +16,6 @@ export const getRoadmap = (id, rank) =>
 // Saves the "Select this career" choice
 export const selectCareer = (id, career) =>
   client.patch(`/predictions/${id}/select`, { career }).then((r) => r.data)
+
+// Permanently deletes a prediction (and everything saved with it). Resolves to { deleted: true, id }.
+export const deletePrediction = (id) => client.delete(`/predictions/${id}`).then((r) => r.data)

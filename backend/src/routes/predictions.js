@@ -1,7 +1,7 @@
 // backend/src/routes/predictions.js
 //
 // Predictions are CREATED by POST /api/assessments (see assessments.js).
-// This file only reads them and saves the user's "select this career" choice.
+// This file reads them, saves the user's "select this career" choice, and deletes them.
 
 import { Router } from 'express'
 import { supabase } from '../config/supabase.js'
@@ -279,6 +279,73 @@ router.patch('/:id/select', async (req, res) => {
   if (updateError) return res.status(500).json({ message: 'Could not select career' })
 
   res.json({ selectedCareer: career })
+})
+
+// DELETE /api/predictions/:id
+// Permanently deletes one of the user's predictions from the database:
+// its recommended careers, careers to avoid, insights and the saved assessment answers.
+// The shared career_roadmaps table is NOT touched (roadmaps are reused by every user).
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params
+  if (!UUID_RE.test(id)) return res.status(404).json({ message: 'Prediction not found' })
+
+  // 1. It must exist AND belong to this user. Also finds the assessment saved with it.
+  const { data: p, error } = await supabase
+    .from('predictions')
+    .select('id, assessments(id)')
+    .eq('id', id)
+    .eq('user_id', req.user.id)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Delete prediction (lookup) error:', error.message, error.details)
+    return res.status(500).json({ message: 'Could not delete prediction' })
+  }
+  if (!p) return res.status(404).json({ message: 'Prediction not found' })
+
+  const assessmentId = one(p.assessments)?.id ?? null
+
+  // 2. Delete the rows that belong to this prediction
+  for (const table of ['recommended_careers', 'avoid_careers', 'prediction_results']) {
+    const { error: childError } = await supabase.from(table).delete().eq('prediction_id', id)
+    if (childError) {
+      console.error(`Delete prediction (${table}) error:`, childError.message, childError.details, childError.hint)
+      return res.status(500).json({ message: 'Could not delete prediction' })
+    }
+  }
+
+  // 3. Delete the prediction itself (scoped to this user again, just to be safe).
+  //    .select('id') returns the deleted rows, so we can tell "deleted" from "nothing matched".
+  const removePrediction = () =>
+    supabase.from('predictions').delete().eq('id', id).eq('user_id', req.user.id).select('id')
+
+  let { data: gone, error: delError } = await removePrediction()
+
+  // If the assessment row points at this prediction (foreign key 23503), remove it first, then retry
+  if (delError?.code === '23503' && assessmentId) {
+    const { error: assessmentError } = await supabase.from('assessments').delete().eq('id', assessmentId)
+    if (assessmentError) {
+      console.error('Delete prediction (assessment first) error:', assessmentError.message, assessmentError.details)
+    } else {
+      ;({ data: gone, error: delError } = await removePrediction())
+    }
+  }
+
+  if (delError || !gone?.length) {
+    console.error(
+      'Delete prediction error:',
+      delError ? `${delError.message} | ${delError.details} | ${delError.hint}` : 'no row was deleted'
+    )
+    return res.status(500).json({ message: 'Could not delete prediction' })
+  }
+
+  // 4. Delete the saved assessment answers (does nothing if step 3 already removed it)
+  if (assessmentId) {
+    const { error: assessmentError } = await supabase.from('assessments').delete().eq('id', assessmentId)
+    if (assessmentError) console.error('Delete prediction (assessment) error:', assessmentError.message)
+  }
+
+  res.json({ deleted: true, id })
 })
 
 export default router

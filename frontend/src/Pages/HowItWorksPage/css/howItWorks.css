@@ -39,10 +39,11 @@
   margin: 0 0 24px;
   max-width: 16ch;
 }
+/* paragraph: uses the shared size from index.css (--text-body) */
 .hiw-intro p {
   max-width: 60ch;
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
   color: var(--muted);
   margin: 0;
 }
@@ -161,10 +162,11 @@
   margin: 0 0 16px;
   color: var(--dk);
 }
+/* paragraph: uses the shared size from index.css (--text-body) */
 .hiw-pn p {
   margin: 0;
-  font-size: clamp(16px, 1.6vw, 21px);
-  line-height: 1.6;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
 }
 .hiw-ex {
   margin-top: 18px !important;
@@ -299,6 +301,20 @@
   transform: none;
 }
 
+/* ---------- Tablet + mobile: hide the step path, content goes full width ---------- */
+@media (max-width: 1024px) {
+  .hiw-journey {
+    display: block;
+    padding-left: 0;
+  }
+  .hiw-rail {
+    display: none;
+  }
+  .hiw-steps {
+    padding: 0 clamp(20px, 5vw, 56px);
+  }
+}
+
 /* ---------- Tablet / large phones ---------- */
 @media (max-width: 960px) {
   .hiw-vis.fan {
@@ -315,7 +331,7 @@
 
 /* ---------- Mobile ---------- */
 @media (max-width: 760px) {
-  /* intro */
+  /* intro (paragraph size now comes from --text-body, so no override here) */
   .hiw-intro {
     padding-top: 28px;
     padding-bottom: 20px;
@@ -326,33 +342,7 @@
     max-width: none;
     margin-bottom: 16px;
   }
-  .hiw-intro p {
-    font-size: 15px;
-    line-height: 1.65;
-  }
 
-  /* layout: slimmer rail, more room for content */
-  .hiw-journey {
-    grid-template-columns: 52px 1fr;
-    padding-left: 12px;
-  }
-  .hiw-path svg {
-    height: 80svh;
-  }
-  .hiw-node .lb {
-    display: none;
-  }
-  .hiw-node text.n {
-    font-size: 18px;
-  }
-  .hiw-node circle {
-    stroke-width: 5;
-  }
-
-  .hiw-steps {
-    padding-left: 14px;
-    padding-right: 16px;
-  }
   /* steps size to their content instead of forcing a full screen each */
   .hiw-step {
     min-height: 0;
@@ -362,7 +352,7 @@
     gap: 22px;
   }
 
-  /* text */
+  /* text (paragraph size now comes from --text-body, so no override here) */
   .hiw-num {
     font-size: 48px;
     margin-bottom: 10px;
@@ -376,16 +366,10 @@
     font-size: 16px;
     margin-bottom: 12px;
   }
-  .hiw-pn p {
-    font-size: 15px;
-    line-height: 1.65;
-  }
   .hiw-ex {
     margin-top: 16px !important;
     padding: 14px 16px;
     border-radius: 14px;
-    font-size: 14.5px !important;
-    line-height: 1.6;
   }
 
   /* visuals */
@@ -448,14 +432,6 @@
 
 /* ---------- Small phones ---------- */
 @media (max-width: 380px) {
-  .hiw-journey {
-    grid-template-columns: 46px 1fr;
-    padding-left: 8px;
-  }
-  .hiw-steps {
-    padding-left: 10px;
-    padding-right: 12px;
-  }
   .hiw-intro h1 {
     font-size: 28px;
   }

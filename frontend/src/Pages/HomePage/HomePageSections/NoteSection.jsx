@@ -43,32 +43,30 @@ const NoteSection = () => {
 const styles = {
   section: {
     width: '100%',
-    minHeight: '100vh',
-    backgroundColor: '#F8F0E5',
+    minHeight: '60vh',          // shorter section so the note isn't lost in empty space
+    backgroundColor: 'transparent', // background removed
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-end',     // pushes the note down to the bottom of the section
     justifyContent: 'center',
-    padding: '40px 24px',
+    padding: '40px 24px 48px',
     boxSizing: 'border-box',
   },
   card: {
     width: '100%',
     maxWidth: '760px',
-    backgroundColor: '#020530',
-    borderRadius: '10px',
-    padding: '40px 32px',
-    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+    backgroundColor: 'transparent', // navy card background removed
+    padding: 0,
     boxSizing: 'border-box',
     transition:
       'opacity 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s, transform 1.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s',
   },
   text: {
     margin: 0,
-    color: '#FFFFFF',
+    color: '#2b2a27',           // dark text, since the navy background is gone
     fontFamily: "'Inter', sans-serif",
-    fontSize: '16px',
-    fontWeight: 600,
-    lineHeight: 1.4,
+    fontSize: '12px',           // was 16px
+    fontWeight: 500,
+    lineHeight: 1.5,
     textAlign: 'center',
   },
 }

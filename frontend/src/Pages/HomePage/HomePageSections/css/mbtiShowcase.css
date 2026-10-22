@@ -55,10 +55,11 @@
   position: absolute;
 }
 
+/* paragraphs use the same shared size as the rest of the site (see --text-body in index.css) */
 .mbti__ly p {
   margin: 0;
-  font-size: clamp(12px, 1.05vw, 15px);
-  line-height: 1.5;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
   color: var(--mbti-ink);
 }
 
@@ -222,7 +223,7 @@
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {
   .mbti__stage { --mbti-ring: min(64vw, 46vh); }
-  .mbti__ly p { font-size: 12px; }
+  /* (removed the old 12px paragraph override so phones use the shared --text-body size) */
   .mbti__tl, .mbti__tr, .mbti__bl { max-width: 44vw; }
   .mbti__tl { top: 3vh; left: 4vw; }
   .mbti__tr { top: 3vh; right: 4vw; }

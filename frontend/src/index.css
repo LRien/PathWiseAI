@@ -5,6 +5,8 @@
 :root {
   color-scheme: light dark;
   --nav-h: 94px; /* height of the fixed navbar, the page is pushed down by this much */
+  --text-body: 16px;     /* one font size for every paragraph */
+  --text-body-lh: 1.55;  /* and one line-height */
 }
 html {
   scroll-padding-top: var(--nav-h); /* anchor links won't hide behind the bar */
@@ -20,7 +22,13 @@ body{
 }
 .public-page {
   padding-top: var(--nav-h);
-} 
+}
+
+/* catch-all so any paragraph in any component matches */
+p {
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
+}
 
 
 
@@ -232,6 +240,7 @@ body{
 @media (max-width: 767px) {
   :root {
     --nav-h: 84px; /* shorter bar on phones (20px + 44px button + 20px) */
+    --text-body: 15px; /* slightly smaller paragraphs on phones, still uniform */
   }
 
   .navbar__bar {
@@ -333,8 +342,8 @@ body{
 .hero__text {
   max-width: 54ch;
   margin: 0 0 40px;
-  font-size: 18px;
-  line-height: 1.5;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
   color: var(--hero-muted);
 }
 
@@ -398,7 +407,7 @@ body{
     animation: none;
   }
 }
-/* ---------- Footer (replace the whole old ".ft" block in index.css with this) ---------- */
+/* ---------- Footer ---------- */
 .ft {
   width: 100%;
   background: #f5efe4;
@@ -406,7 +415,7 @@ body{
   font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   box-sizing: border-box;
-  padding: clamp(28px, 5vw, 48px) clamp(20px, 5vw, 56px) 20px;
+  padding: clamp(32px, 5vw, 56px) clamp(20px, 5vw, 56px) 20px;
 }
 .ft *,
 .ft *::before,
@@ -418,98 +427,96 @@ body{
   margin: 0 auto;
 }
 
-/* brand + short description */
-.ft-about {
-  text-align: center;
-  margin-bottom: 24px;
+/* main row: about | navigation | account | illustration */
+.ft-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) auto auto auto;
+  align-items: start; /* top-align every column so the headings line up */
+  column-gap: clamp(32px, 6vw, 96px);
+  padding-bottom: 28px;
 }
+
 .ft-brand {
-  margin: 0 0 8px;
-  font-size: 16px;
+  margin: 0 0 16px;
+  font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.01em;
 }
 .ft-about p {
-  margin: 0 auto;
-  max-width: 46ch;
-  font-size: 13px;
-  line-height: 1.5;
+  margin: 0;
+  max-width: 42ch;
+  font-size: 13px; /* smaller than --text-body on purpose */
+  line-height: 1.55;
   font-weight: 500;
-  color: #4a4843;
+  color: #1a1a18;
 }
 
-/* one row of links with the illustration in the middle */
-.ft-links {
+/* link columns */
+.ft-head {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #0a0a0a;
+}
+.ft-list {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: clamp(16px, 4vw, 48px);
-  padding: 8px 0 24px;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.ft-group {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: clamp(16px, 4vw, 48px);
-}
-.ft-group:first-child {
-  justify-content: flex-start;
-}
-.ft-group:last-child {
-  justify-content: flex-end;
-}
-.ft-links a {
-  color: #4a4843;
+.ft-list a {
+  color: #6b6a66;
   text-decoration: none;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
   white-space: nowrap;
   transition: color 0.2s;
 }
-.ft-links a:hover {
+.ft-list a:hover {
   color: #0a0a0a;
 }
-.ft-links a:focus-visible {
+.ft-list a:focus-visible {
   outline: 3px solid #1f77c9;
   outline-offset: 3px;
 }
 
 .ft-art {
-  flex: none;
-  height: clamp(90px, 10vw, 120px);
-  width: auto;
   display: block;
+  justify-self: end;
+  align-self: center;
+  height: clamp(150px, 16vw, 190px);
+  width: auto;
 }
 
+/* bottom bar */
 .ft-bottom {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #c9c6bf;
+  padding-top: 14px;
+  border-top: 2px solid #a9a7a1;
   font-size: 9px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.02em;
-  color: #6b6a66;
+  color: #8a8882;
 }
 
-/* phones: illustration on top, links wrap in the middle */
-@media (max-width: 700px) {
-  .ft-links {
-    flex-direction: column;
-    gap: 14px;
+/* tablets / phones: about on top, two link columns, illustration last */
+@media (max-width: 900px) {
+  .ft-main {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 28px;
+  }
+  .ft-about {
+    grid-column: 1 / -1;
   }
   .ft-art {
-    order: -1;
-  }
-  .ft-group,
-  .ft-group:first-child,
-  .ft-group:last-child {
-    flex: none;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px 24px;
+    grid-column: 1 / -1;
+    justify-self: center;
   }
 }
 @media (max-width: 520px) {
@@ -572,8 +579,8 @@ body{
 .contact__lead {
   max-width: 46ch;
   margin: 0 0 32px;
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
   color: var(--c-muted);
 }
 
@@ -713,7 +720,7 @@ body{
   margin: 0;
   padding-top: 16px;
   border-top: 1px solid var(--c-line);
-  font-size: 11px;
+  font-size: 11px; /* fine print, intentionally smaller than body paragraphs */
   line-height: 1.6;
   color: var(--c-muted);
   opacity: 0.8;
