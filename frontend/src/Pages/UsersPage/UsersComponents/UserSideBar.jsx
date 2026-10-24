@@ -12,6 +12,11 @@ const TOKEN_KEY = 'token'
 const SEEN_KEY = 'seen-predictions'
 const DAY = 24 * 60 * 60 * 1000
 
+/* The latest prediction is what the dashboard shows, so its card opens the dashboard.
+   Older predictions still open their own page. */
+const DASHBOARD = '/dashboard'
+const OLDER = (id) => `/dashboard/recommendations/${id}`
+
 const readSeen = () => {
   try {
     return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'))
@@ -29,6 +34,8 @@ const writeSeen = (set) => {
 
 const fmtDate = (iso) =>
   new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+
+const clampPct = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)))
 
 /* ---------- tiny inline icons (no icon library needed) ---------- */
 const Icon = ({ children }) => (
@@ -81,15 +88,16 @@ const ICONS = {
   ),
 }
 
-const itemCls = 'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition'
+const itemCls = 'flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition'
 
-/* ---------- one prediction card: link + tag + delete (with an inline "are you sure?") ---------- */
+/* ---------- one prediction card: link + tag + match bar + delete (with an inline "are you sure?") ---------- */
 const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const tag = isNew ? 'New' : isLatest ? 'Latest' : null
+  const percent = clampPct(pred.topMatch?.percent)
 
   const remove = async () => {
     setBusy(true)
@@ -112,7 +120,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
       <div
         role="alertdialog"
         aria-label={`Delete prediction ${pred.number}`}
-        className="rounded-2xl border border-[#e0404a]/30 bg-[#fdf1f0] px-4 py-3.5"
+        className="rounded-2xl border border-[#f0c4c7] bg-[#fcecec] px-4 py-3.5"
       >
         <p className="text-sm font-extrabold text-black">Delete Prediction #{pred.number}?</p>
         <p className="mt-0.5 text-xs leading-relaxed text-neutral-600">
@@ -126,7 +134,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
               setError('')
             }}
             disabled={busy}
-            className="flex-1 rounded-full border border-[#e0d1ba] bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-neutral-700 transition hover:bg-[#fbf6ee] disabled:opacity-60"
+            className="flex-1 rounded-full border border-[#e0d1ba] bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-60"
           >
             Cancel
           </button>
@@ -134,7 +142,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
             type="button"
             onClick={remove}
             disabled={busy}
-            className="flex-1 rounded-full bg-[#e0404a] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#c9343d] disabled:opacity-60"
+            className="flex-1 rounded-full bg-[#e0404a] px-3 py-2 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#c9343d] disabled:opacity-60"
           >
             {busy ? 'Deleting...' : 'Delete'}
           </button>
@@ -151,13 +159,14 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
   return (
     <div className="group relative">
       <NavLink
-        to={`/dashboard/recommendations/${pred.id}`}
+        to={isLatest ? DASHBOARD : OLDER(pred.id)}
+        end
         onClick={onNavigate}
         className={({ isActive }) =>
           `block rounded-2xl border px-4 py-3.5 pr-11 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40 ${
             isActive
               ? 'border-[#0b0b2b] bg-[#0b0b2b] text-white'
-              : 'border-[#e6d8c3] bg-white/70 text-black hover:-translate-y-0.5 hover:border-[#0b0b2b]/40 hover:shadow-md'
+              : 'border-[#e6d8c3] bg-[#fbf6ee] text-black hover:-translate-y-0.5 hover:border-[#0b0b2b]/40 hover:shadow-md'
           }`
         }
       >
@@ -167,7 +176,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
               <span className="text-base font-extrabold leading-tight tracking-tight">Prediction #{pred.number}</span>
               {tag && (
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ${
+                  className={`rounded-full px-2 py-0.5 text-xs font-bold text-white ${
                     isActive ? 'bg-white/20' : isNew ? 'bg-[#2f9e62]' : 'bg-[#0b0b2b]'
                   }`}
                 >
@@ -175,12 +184,27 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
                 </span>
               )}
             </span>
+
             <span className={`mt-0.5 block text-sm font-semibold ${isActive ? 'text-white/70' : 'text-neutral-500'}`}>
               {fmtDate(pred.createdAt)}
             </span>
-            <span className={`mt-2 block truncate text-xs font-semibold ${isActive ? 'text-white/80' : 'text-neutral-600'}`}>
-              {pred.topMatch.title} · {pred.topMatch.percent}%
-            </span>
+
+            {pred.topMatch && (
+              <>
+                <span className="mt-3 flex items-center justify-between gap-2">
+                  <span className={`min-w-0 flex-1 truncate text-xs font-semibold ${isActive ? 'text-white/85' : 'text-neutral-700'}`}>
+                    {pred.topMatch.title}
+                  </span>
+                  <span className="shrink-0 text-sm font-black">{percent}%</span>
+                </span>
+                <span className={`mt-1.5 block h-1.5 overflow-hidden rounded-full ${isActive ? 'bg-white/20' : 'bg-[#e8dcc8]'}`}>
+                  <span
+                    className="block h-full rounded-full"
+                    style={{ width: `${percent}%`, background: isActive ? '#5aa9ff' : '#2f80e0' }}
+                  />
+                </span>
+              </>
+            )}
           </>
         )}
       </NavLink>
@@ -190,7 +214,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
         onClick={() => setConfirming(true)}
         aria-label={`Delete prediction ${pred.number}`}
         title="Delete"
-        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-[#e0404a]/10 hover:text-[#e0404a] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e0404a]/50 lg:opacity-0 lg:group-hover:opacity-100"
+        className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full text-neutral-400 transition hover:bg-[#e0404a]/15 hover:text-[#e0404a] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e0404a]/50 lg:opacity-0 lg:group-hover:opacity-100"
       >
         {ICONS.trash}
       </button>
@@ -207,7 +231,10 @@ const PredictionList = ({ onNavigate }) => {
   const [reloadKey, setReloadKey] = useState(0)
   const [seen, setSeen] = useState(readSeen)
 
-  const activeId = pathname.split('/').pop() // the prediction currently open, if any
+  const onDashboard = pathname === DASHBOARD || pathname === `${DASHBOARD}/`
+  const pathId = pathname.split('/').pop()
+  /* the prediction currently on screen: the latest one on the dashboard, otherwise the one in the URL */
+  const viewedId = onDashboard ? items?.[0]?.id : pathId
 
   /* reload on every page change, and whenever something announces "predictions-changed" */
   useEffect(() => {
@@ -234,48 +261,56 @@ const PredictionList = ({ onNavigate }) => {
 
   /* opening a prediction marks it as seen, so its "New" tag goes away */
   useEffect(() => {
-    if (!items?.some((p) => p.id === activeId)) return
+    if (!viewedId || !items?.some((p) => p.id === viewedId)) return
     setSeen((s) => {
-      if (s.has(activeId)) return s
+      if (s.has(viewedId)) return s
       const next = new Set(s)
-      next.add(activeId)
+      next.add(viewedId)
       writeSeen(next)
       return next
     })
-  }, [activeId, items])
+  }, [viewedId, items])
 
   const handleDeleted = (id) => {
     setItems((list) => (list ? list.filter((p) => p.id !== id) : list))
     window.dispatchEvent(new Event('predictions-changed')) // refreshes numbers here and on the dashboard
-    if (id === activeId) navigate('/dashboard/recommendations') // you were viewing it, so go back
+    if (id === viewedId && !onDashboard) navigate(DASHBOARD) // you were viewing it, so go back
   }
 
   return (
-    <nav
-      aria-label="Your predictions"
-      data-lenis-prevent
-      className="mt-6 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
-    >
-      {items === null && !failed && <p className="px-1 text-xs text-neutral-500">Loading predictions...</p>}
-      {items === null && failed && <p className="px-1 text-xs text-neutral-500">Couldn&apos;t load predictions.</p>}
-      {items?.length === 0 && <p className="px-1 text-xs text-neutral-500">No predictions yet.</p>}
+    <div className="mt-6 flex min-h-0 flex-1 flex-col">
+      <div className="px-1 text-xs font-bold uppercase tracking-wide text-neutral-500">Your predictions</div>
 
-      {items?.map((p, i) => (
-        <PredictionCard
-          key={p.id}
-          pred={p}
-          isLatest={i === 0}
-          isNew={!seen.has(p.id) && Date.now() - new Date(p.createdAt).getTime() < DAY}
-          onNavigate={onNavigate}
-          onDeleted={handleDeleted}
-        />
-      ))}
-    </nav>
+      <nav
+        aria-label="Your predictions"
+        data-lenis-prevent
+        className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
+      >
+        {items === null && !failed && <p className="px-1 text-sm text-neutral-500">Loading predictions...</p>}
+        {items === null && failed && <p className="px-1 text-sm text-neutral-500">Couldn&apos;t load predictions.</p>}
+        {items?.length === 0 && (
+          <p className="px-1 text-sm leading-relaxed text-neutral-500">
+            Nothing here yet. Start a new prediction to see your career matches.
+          </p>
+        )}
+
+        {items?.map((p, i) => (
+          <PredictionCard
+            key={p.id}
+            pred={p}
+            isLatest={i === 0}
+            isNew={!seen.has(p.id) && Date.now() - new Date(p.createdAt).getTime() < DAY}
+            onNavigate={onNavigate}
+            onDeleted={handleDeleted}
+          />
+        ))}
+      </nav>
+    </div>
   )
 }
 
 /*
-  The whole sidebar is self-contained now:
+  The whole sidebar is self-contained:
   - closed by default
   - the triple-dot button (top-left) opens it as an overlay on top of the page
   - while it is open, the page behind it cannot scroll
@@ -343,6 +378,7 @@ const UserSideBar = ({ onNavigate }) => {
     // Clear everything auth-related on the client
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem('user') // remove if you don't store this
+    localStorage.removeItem('selectedCareer')
     sessionStorage.clear()
 
     close()
@@ -360,7 +396,7 @@ const UserSideBar = ({ onNavigate }) => {
         aria-expanded={open}
         title="Open sidebar"
         tabIndex={open ? -1 : 0}
-        className={`fixed left-5 top-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#0b0b2b] text-white shadow-lg ring-4 ring-white/70 transition duration-300 hover:scale-110 hover:bg-[#1a1a4a] focus-visible:outline-none focus-visible:ring-[#1f77c9] motion-reduce:transition-none ${
+        className={`fixed left-5 top-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#0b0b2b] text-white shadow-lg ring-4 ring-white/70 transition duration-300 hover:scale-110 hover:bg-[#1a1a4a] focus-visible:outline-none focus-visible:ring-[#2f80e0] motion-reduce:transition-none ${
           open ? 'pointer-events-none scale-50 opacity-0' : 'scale-100 opacity-100'
         }`}
       >
@@ -376,7 +412,7 @@ const UserSideBar = ({ onNavigate }) => {
         {/* dark backdrop, click to close */}
         <div
           onClick={close}
-          className={`absolute inset-0 bg-black/40 transition-opacity duration-300 motion-reduce:transition-none ${
+          className={`absolute inset-0 bg-[#0b0b2b]/50 backdrop-blur-[2px] transition-opacity duration-300 motion-reduce:transition-none ${
             open ? 'opacity-100' : 'opacity-0'
           }`}
         />
@@ -385,12 +421,12 @@ const UserSideBar = ({ onNavigate }) => {
           role="dialog"
           aria-modal="true"
           aria-label="Sidebar"
-          className={`absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-[#f6ecdc] px-4 py-6 shadow-2xl transition-[transform,visibility] duration-300 ease-in-out motion-reduce:transition-none ${
+          className={`absolute inset-y-0 left-0 flex w-80 max-w-[88vw] flex-col rounded-r-3xl bg-[#f3e7d6] px-5 py-6 shadow-2xl transition-[transform,visibility] duration-300 ease-in-out motion-reduce:transition-none ${
             open ? 'translate-x-0' : 'invisible -translate-x-full'
           }`}
         >
           <div className="flex items-center justify-between">
-            <Link to="/" onClick={handleNavigate} className="px-2 text-lg font-black tracking-tight text-black">
+            <Link to="/" onClick={handleNavigate} className="px-1 text-lg font-black tracking-tight text-black">
               CAREER MATCH
             </Link>
             <button
@@ -398,7 +434,7 @@ const UserSideBar = ({ onNavigate }) => {
               onClick={close}
               aria-label="Close sidebar"
               title="Close sidebar"
-              className="rounded-lg p-2 text-neutral-500 transition hover:bg-[#0b0b2b]/5 hover:text-black"
+              className="rounded-full border border-[#d9c8ae] bg-white p-2 text-neutral-600 transition hover:border-[#0b0b2b] hover:text-black"
             >
               {ICONS.hide}
             </button>
@@ -407,7 +443,7 @@ const UserSideBar = ({ onNavigate }) => {
           <Link
             to="/assessment-test"
             onClick={handleNavigate}
-            className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b0b2b] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a]"
+            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b0b2b] px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white shadow-sm transition hover:bg-[#1a1a4a]"
           >
             {ICONS.plus}
             New prediction
@@ -417,7 +453,7 @@ const UserSideBar = ({ onNavigate }) => {
           <PredictionList onNavigate={handleNavigate} />
 
           {/* settings + log out stay at the bottom */}
-          <div className="mt-4 space-y-1 pt-2">
+          <div className="mt-4 space-y-1 border-t border-[#e6d8c3] pt-3">
             <NavLink
               to="/dashboard/settings"
               onClick={handleNavigate}
@@ -425,14 +461,14 @@ const UserSideBar = ({ onNavigate }) => {
                 `${itemCls} ${
                   isActive
                     ? 'bg-[#0b0b2b] text-white shadow-sm'
-                    : 'text-neutral-600 hover:bg-[#0b0b2b]/5 hover:text-black'
+                    : 'text-neutral-600 hover:bg-white/70 hover:text-black'
                 }`
               }
             >
               {ICONS.settings}
               Settings
             </NavLink>
-            <button type="button" onClick={logout} className={`${itemCls} text-neutral-500 hover:text-black`}>
+            <button type="button" onClick={logout} className={`${itemCls} text-neutral-500 hover:bg-white/70 hover:text-black`}>
               {ICONS.logout}
               Log out
             </button>

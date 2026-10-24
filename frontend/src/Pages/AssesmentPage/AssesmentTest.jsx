@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { submitAssessment } from '../../api/assessment'
+import { getPrediction, selectCareer } from '../../api/predictions'
 import { getProfile } from '../../Data/settingsStore'
-import ResumeUpload from './ResumeUpload'
+import PredictionModal from './PredictionModal' // adjust the path to where you keep the modal
 
 /* ---------- Theme (matches the homepage) ----------
    cream page  #f3e7d6   · lighter cream cards #fbf6ee · border #e6d8c3
@@ -353,13 +354,17 @@ const AssesmentTest = () => {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
+  /* the saved prediction + the inputs that produced it; when set, the result modal opens */
+  const [result, setResult] = useState(null)
+  const [selecting, setSelecting] = useState(false)
+  const [selectError, setSelectError] = useState('')
+
   /* pre-filled from Settings > Assessment defaults */
   const [mbti, setMbti] = useState(() => getProfile().mbti)
   const [degree, setDegree] = useState(() => getProfile().degree)
   const [skills, setSkills] = useState([])
   const [otherSkills, setOtherSkills] = useState('')
   const [pref, setPref] = useState('')
-  const [resumeText, setResumeText] = useState('') // text read from the uploaded resume, sent with the assessment
   const [filter, setFilter] = useState('all')
   const [skillSeed, setSkillSeed] = useState(0)
   const [prefSeed, setPrefSeed] = useState(0)
@@ -398,22 +403,6 @@ const AssesmentTest = () => {
   const toggleSkill = (s) => setSkills((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]))
   const addSuggestion = (t) => setPref((cur) => (cur.includes(t) ? cur : cur ? `${cur.trim()} ${t}` : t))
 
-  /* resume upload: tick the skills found, add unlisted ones to "Other skills",
-     and fill the degree / MBTI only if the user has not set them yet */
-  const applyResume = ({ skills: found, extra: unlisted, degree: d, mbti: m, text }) => {
-    setSkills((cur) => [...new Set([...cur, ...found])])
-    if (unlisted.length) {
-      setOtherSkills((cur) => {
-        const have = cur.split(',').map((s) => s.trim().toLowerCase())
-        const add = unlisted.filter((s) => !have.includes(s.toLowerCase()))
-        return add.length ? [cur.trim().replace(/,$/, ''), ...add].filter(Boolean).join(', ') : cur
-      })
-    }
-    if (d && degree.trim().length < 2) setDegree(d)
-    if (m && !mbti) setMbti(m)
-    setResumeText(text.slice(0, 6000))
-  }
-
   const extra = otherSkills.split(',').map((s) => s.trim()).filter(Boolean)
   const done = [!!mbti, degree.trim().length > 1, skills.length + extra.length > 0, true]
   const first = done.findIndex((d) => !d)
@@ -427,22 +416,63 @@ const AssesmentTest = () => {
     setSubmitError('')
     setSubmitting(true)
 
+    const allSkills = [...new Set([...skills, ...extra])]
+
     try {
       const id = await submitAssessment({
         mbti,
         degree: degree.trim(),
-        skills: [...new Set([...skills, ...extra])],
+        skills: allSkills,
         softSkills: skills.filter((s) => KIND[s] === 'soft'),
         fieldSkills: skills.filter((s) => KIND[s] !== 'soft'),
         preference: pref.trim(),
-        resumeText, // empty string when no resume was uploaded
       })
-      navigate(`/dashboard/recommendations/${id}`) // straight to the top 3 careers
+
+      /* load the saved prediction and show it in the modal */
+      try {
+        const pred = await getPrediction(id)
+        setSelectError('')
+        setResult({
+          pred: { ...pred, id: pred?.id ?? id },
+          input: { mbti, degree: degree.trim(), skills: allSkills },
+        })
+        setSubmitting(false)
+      } catch {
+        // the prediction is saved, so the dashboard can still show it
+        navigate('/dashboard')
+      }
     } catch (err) {
       setSubmitError(err.message || 'Something went wrong. Please try again.')
       setSubmitting(false)
     }
   }
+
+  /* choose a career in the modal: save it, then open its roadmap */
+  const openRoadmap = async (title) => {
+    const id = result?.pred?.id
+    if (!id || !title || selecting) return
+
+    setSelecting(true)
+    setSelectError('')
+
+    try {
+      await selectCareer(id, title)
+
+      try {
+        localStorage.setItem('selectedCareer', JSON.stringify({ predictionId: id, career: title }))
+      } catch {
+        // the database remains the source of the selected career
+      }
+
+      navigate('/dashboard/roadmap', { state: { predictionId: id } })
+    } catch (err) {
+      setSelectError(err?.message || 'Unable to select this career. Please try again.')
+      setSelecting(false)
+    }
+  }
+
+  /* closing the modal leaves the saved prediction on the dashboard */
+  const closeResult = () => navigate('/dashboard')
 
   /* go to the previous page; if the page was opened directly (no history), fall back to the dashboard */
   const goBack = () => {
@@ -563,9 +593,6 @@ const AssesmentTest = () => {
               Select all skills that apply to you, whatever your field. Providing accurate information helps
               the system generate more personalized career recommendations.
             </p>
-
-            {/* resume upload: reads PDF / DOCX / image and ticks the skills it finds */}
-            <ResumeUpload catalog={SKILLS} onApply={applyResume} />
 
             {/* tabs wrap onto a second line instead of being cut off at the edge */}
             <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Skill categories">
@@ -724,6 +751,19 @@ const AssesmentTest = () => {
           </button>
         </div>
       </form>
+
+      {/* result modal: opens once the prediction is ready */}
+      {result && (
+        <PredictionModal
+          pred={result.pred}
+          input={result.input}
+          busy={selecting}
+          error={selectError}
+          onClose={closeResult}
+          onViewRoadmap={openRoadmap}
+          onViewDashboard={closeResult}
+        />
+      )}
     </main>
   )
 }
