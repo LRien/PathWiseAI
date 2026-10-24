@@ -3,7 +3,7 @@
   --mbti-ink: #0a0a0a;
   position: relative;
   height: 900vh;  /* scroll distance: 16 personalities */
-  height: 900dvh; /* FIX: follows the real visible height on phones */
+  height: 900svh; /* FIX: svh stays constant when the phone URL bar shows/hides, so pinning never flickers */
   font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
   width: 100%;
   color: var(--mbti-ink);
@@ -23,13 +23,12 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  height: 100dvh; /* FIX: was 100vh only, which is taller than the visible screen on phones */
+  height: 100svh; /* FIX: was dvh, which resized mid-scroll */
   overflow: hidden;
   background: #d9c8f0;
   color: var(--mbti-ink);
 
-  /* FIX: touch behaviour. JS sets touch-action inline while the section is pinned. */
-  overscroll-behavior: none;
+  /* JS sets touch-action inline while the section is pinned. */
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -87,7 +86,7 @@
   color: var(--dk);
 }
 
-/* ---------- Ring: 16 clickable segments that fill with scroll ---------- */
+/* ---------- Ring: 16 segments that fill with scroll ---------- */
 .mbti__ringbox {
   position: absolute;
   left: 50%;
@@ -103,7 +102,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  pointer-events: none; /* only the segment hit areas take clicks */
+  pointer-events: none;
 }
 
 .mbti__ring g {
@@ -223,7 +222,6 @@
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {
   .mbti__stage { --mbti-ring: min(64vw, 46vh); }
-  /* (removed the old 12px paragraph override so phones use the shared --text-body size) */
   .mbti__tl, .mbti__tr, .mbti__bl { max-width: 44vw; }
   .mbti__tl { top: 3vh; left: 4vw; }
   .mbti__tr { top: 3vh; right: 4vw; }
