@@ -1,13 +1,42 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap');
 @import "tailwindcss";
 
+/* ---------- Fonts ----------
+   Montserrat = headings / brand / big numbers
+   Inter      = everything else (body, buttons, forms)
+   In Tailwind: font-heading (Montserrat), font-sans / font-body (Inter) */
+@theme {
+  --font-sans: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-heading: 'Montserrat', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+}
 
 :root {
   color-scheme: light dark;
+  --font-body: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-heading: 'Montserrat', 'Inter', 'Helvetica Neue', Arial, sans-serif;
   --nav-h: 94px; /* height of the fixed navbar, the page is pushed down by this much */
   --text-body: 16px;     /* one font size for every paragraph */
   --text-body-lh: 1.55;  /* and one line-height */
 }
+
+/* Every h1-h6 on the site (including the dashboard) uses Montserrat automatically */
+@layer base {
+  html,
+  body {
+    font-family: var(--font-body);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+  }
+}
+
 html {
   scroll-padding-top: var(--nav-h); /* anchor links won't hide behind the bar */
 }
@@ -19,6 +48,7 @@ body {
 body{
   background-color: #F2E7D4;
   color: #0a0a0a;
+  -webkit-font-smoothing: antialiased;
 }
 .public-page {
   padding-top: var(--nav-h);
@@ -57,7 +87,7 @@ p {
   max-width: 100%;
   margin: 0;
   padding: 0 clamp(20px, 5vw, 56px);
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
   color: var(--nav-ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -89,8 +119,9 @@ p {
 }
 
 .navbar__brand {
-  font-weight: 900;
-  font-size: 15px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 16px;
   letter-spacing: 0.01em;
   color: inherit;
   text-decoration: none;
@@ -132,7 +163,7 @@ p {
   border-radius: 999px;
   background: var(--nav-btn);
   color: var(--nav-btn-ink);
-  font: 600 11px 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font: 600 11px var(--font-body);
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -302,7 +333,7 @@ p {
   min-height: calc(100vh - 100px);
   margin: 0 auto;
   padding: 0 clamp(20px, 5vw, 56px) 48px;
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
   color: var(--hero-ink);
 }
 
@@ -312,12 +343,14 @@ p {
   box-sizing: border-box;
 }
 
+/* Montserrat is wider than Inter, so the size is trimmed slightly to keep the two lines from overflowing */
 .hero__title {
   margin: 0 0 24px;
-  font-weight: 900;
-  font-size: clamp(40px, 5.4vw, 80px);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(34px, 4.6vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
 }
 
 .hero__line {
@@ -355,7 +388,7 @@ p {
   border-radius: 999px;
   background: var(--hero-btn);
   color: var(--hero-btn-ink);
-  font: 600 11px 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font: 600 11px var(--font-body);
   letter-spacing: 0.02em;
   text-transform: uppercase;
   text-decoration: none;
@@ -412,7 +445,7 @@ p {
   width: 100%;
   background: #f5efe4;
   color: #0a0a0a;
-  font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   box-sizing: border-box;
   padding: clamp(32px, 5vw, 56px) clamp(20px, 5vw, 56px) 20px;
@@ -438,6 +471,7 @@ p {
 
 .ft-brand {
   margin: 0 0 16px;
+  font-family: var(--font-heading);
   font-size: 20px;
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -454,8 +488,9 @@ p {
 /* link columns */
 .ft-head {
   margin: 0 0 16px;
+  font-family: var(--font-heading);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.01em;
   color: #0a0a0a;
 }
@@ -545,7 +580,7 @@ p {
   max-width: 1200px;
   margin: 0 auto;
   padding: 48px clamp(20px, 5vw, 56px) 80px;
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body);
   color: var(--c-ink);
   -webkit-font-smoothing: antialiased;
 }
@@ -563,6 +598,7 @@ p {
   border-radius: 999px;
   background: var(--c-btn);
   color: var(--c-btn-ink);
+  font-family: var(--font-heading);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -570,10 +606,11 @@ p {
 
 .contact__title {
   margin: 0 0 20px;
-  font-weight: 900;
-  font-size: clamp(44px, 6vw, 72px);
-  line-height: 0.98;
-  letter-spacing: -0.03em;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(38px, 5vw, 62px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
 }
 
 .contact__lead {
@@ -603,6 +640,7 @@ p {
 }
 
 .contact__card-label {
+  font-family: var(--font-heading);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -629,8 +667,9 @@ p {
 
 .contact__form-title {
   margin: 0;
+  font-family: var(--font-heading);
   font-size: 22px;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
@@ -660,7 +699,7 @@ p {
   border-radius: 12px;
   background: var(--c-field);
   color: var(--c-ink);
-  font: 500 13px 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font: 500 13px var(--font-body);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -695,7 +734,7 @@ p {
   border-radius: 999px;
   background: var(--c-btn);
   color: var(--c-btn-ink);
-  font: 600 12px 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font: 600 12px var(--font-body);
   cursor: pointer;
   transition: opacity 0.2s;
 }

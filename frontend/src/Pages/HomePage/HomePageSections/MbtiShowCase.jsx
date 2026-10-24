@@ -801,11 +801,12 @@ const MbtiShowCase = () => {
     const settled = () => !busy && jump < 0 && shown === want && performance.now() >= lockUntil
 
     /* FIX: touch-action has to be decided BEFORE a touch starts, so it is kept in sync with the state.
-       While pinned we own the gesture ('none'); at the first / last type only the direction that leaves the section
-       is handed back to the browser (finger down at the first type, finger up at the last type). */
+       While pinned we own the gesture ('none'). At the first / last type we use 'pan-y' so the browser can
+       scroll the page out of the section. (iOS Safari ignores 'pan-up' / 'pan-down', which left the stage
+       stuck on 'none' and trapped the user.) */
     function syncTouchAction() {
       if (!pinned()) { stage.style.touchAction = ''; return }
-      stage.style.touchAction = atEdge(1) ? 'pan-up' : atEdge(-1) ? 'pan-down' : 'none'
+      stage.style.touchAction = atEdge(1) || atEdge(-1) ? 'pan-y' : 'none'
     }
 
     function tryStep(dir) {
@@ -816,8 +817,8 @@ const MbtiShowCase = () => {
       jumpRef.current(k, SNAP_LAND, SNAP_S)
     }
 
-    /* mouse wheel / trackpad: while the section is pinned we take over, and let the page scroll normally only
-       at the very first / last type (so the section can still be left) */
+    /* mouse wheel / trackpad: while the section is pinned we take over, and let the page scroll normally
+       only at the very first / last type (so the section can still be left) */
     const onWheel = (e) => {
       if (e.ctrlKey || Math.abs(e.deltaY) < Math.abs(e.deltaX) || !pinned()) return
       const dir = Math.sign(e.deltaY)

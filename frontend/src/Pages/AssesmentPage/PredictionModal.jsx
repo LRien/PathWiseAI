@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
-import MbtiCharacter, { mbtiTheme } from '../UsersPage//UsersComponents/MbtiCharacter' // adjust the path to where the character lives
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { animate, stagger } from 'animejs'
+import MbtiCharacter, { mbtiTheme, TYPES } from '../UsersPage//UsersComponents/MbtiCharacter' // adjust the path to where the character lives
 
 /* the character pops in, then floats gently; both are switched off for people who prefer reduced motion */
 const CHARACTER_CSS = `
@@ -8,14 +9,27 @@ const CHARACTER_CSS = `
 @keyframes pw-glow { 0%, 100% { opacity: .35; transform: scale(1); } 50% { opacity: .7; transform: scale(1.12); } }
 @keyframes pw-rise { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: no-preference) {
-  .pw-pop { animation: pw-pop .8s cubic-bezier(.2,.8,.2,1) both; }
-  .pw-float { animation: pw-float 3.6s ease-in-out .8s infinite; }
+  .pw-pop { animation: pw-pop .8s cubic-bezier(.2,.8,.2,1) .5s both; }
+  .pw-float { animation: pw-float 3.6s ease-in-out 1.3s infinite; }
   .pw-glow { animation: pw-glow 3.6s ease-in-out infinite; }
   .pw-rise { animation: pw-rise .3s ease-out both; }
 }
 `
 
 const RANK_COLORS = ['#2f80e0', '#f2c230', '#e0404a']
+const RANK_TEXT = ['#fff', '#0b0b2b', '#fff']
+const RANK_LABEL = ['Best match', 'Second match', 'Third match']
+/* podium: #1 in the middle, #2 on the left, #3 on the right (DOM stays in rank order for keyboard users) */
+const RANK_ORDER = ['order-2', 'order-1', 'order-3']
+/* bar heights in px, tallest for the best match, like the loading animation's staircase */
+const BAR_H = [150, 120, 96]
+
+const CONFETTI_COLORS = ['#2f80e0', '#f2c230', '#e0404a', '#e8832a', '#6b7a99']
+const CONFETTI_COUNT = 30
+const LETTER_POOL = 'ISTJENFP'
+
+const reducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 const list = (v) => (Array.isArray(v) ? v : [])
 const text = (x) =>
@@ -68,19 +82,19 @@ const SkillBlock = ({ label, items, tone }) => {
   const rest = items.length - shown.length
   const styles =
     tone === 'good'
-      ? { bg: '#eaf6ef', label: '#2f9e62', chip: 'border-[#bfe3cd]' }
-      : { bg: '#fcecec', label: '#e0404a', chip: 'border-[#f0c4c7]' }
+      ? { bg: '#eaf6ef', label: '#2f9e62' }
+      : { bg: '#fcecec', label: '#e0404a' }
 
   return (
     <div className="min-w-0 rounded-2xl p-4" style={{ background: styles.bg }}>
-      <div className="text-xs font-bold uppercase tracking-wide" style={{ color: styles.label }}>
+      <div className="text-sm font-extrabold" style={{ color: styles.label }}>
         {label}
       </div>
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {shown.map((s) => (
           <li
             key={s}
-            className={`max-w-full break-words rounded-full border bg-white px-2.5 py-1 text-xs leading-4 text-neutral-700 ${styles.chip}`}
+            className="pw-chip max-w-full break-words rounded-full bg-white px-2.5 py-1 text-xs leading-4 text-neutral-700 shadow-sm"
           >
             {s}
           </li>
@@ -97,17 +111,37 @@ const SkillBlock = ({ label, items, tone }) => {
   - input: what the user submitted ({ mbti, degree, skills })
   - busy / error: state while saving the chosen career
   - onClose, onViewRoadmap(title), onViewDashboard
+
+  Layout: the top 3 matches stand on a podium (#1 in the middle, tallest), the chosen career's
+  details sit on a card underneath.
+
+  Opening sequence (anime.js), roughly in this order:
+  modal scales in -> left panel wipes open -> ring draws, type letters roll -> podium bars grow from #3 to #1
+  -> confetti bursts above #1 -> the detail card builds itself (checks draw, chips pop in).
+  Tapping another career replays the detail build and regrows that bar.
 */
 const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onViewRoadmap, onViewDashboard }) => {
   const careers = list(pred?.recommended).slice(0, 3)
   const skills = list(input?.skills)
   const theme = input?.mbti ? mbtiTheme(input.mbti) : null
+  const code = input?.mbti ? String(input.mbti).toUpperCase() : ''
 
-  /* the best match is picked to start with; tap a row to switch */
+  /* the best match is picked to start with; tap a column to switch */
   const [selected, setSelected] = useState(() => careers[0]?.title ?? null)
   const index = Math.max(0, careers.findIndex((c) => c.title === selected))
   const current = careers[index] ?? null
   const parts = current ? careerParts(current) : { why: [], have: [], need: [] }
+
+  /* motion is decided once, so elements that animate in start hidden instead of flashing */
+  const [motion] = useState(() => !reducedMotion())
+  const [shown, setShown] = useState(() => reducedMotion()) // the detail card is revealed after the countdown
+  const hid = motion ? { opacity: 0 } : undefined
+
+  const rootRef = useRef(null)
+  const panelRef = useRef(null)
+  const charRef = useRef(null)
+  const detailRef = useRef(null)
+  const firstDetail = useRef(true)
 
   /* close on Escape + lock page scroll while open */
   useEffect(() => {
@@ -121,18 +155,240 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
     }
   }, [onClose, busy])
 
+  /* ---- the opening sequence ---- */
+  useLayoutEffect(() => {
+    if (!motion || !rootRef.current) return undefined
+    const root = rootRef.current
+    const q = (sel) => Array.from(root.querySelectorAll(sel))
+    const anims = []
+    const timers = []
+    const add = (a) => {
+      anims.push(a)
+      return a
+    }
+    const later = (fn, ms) => timers.push(setTimeout(fn, ms))
+    const rand = (min, max) => min + Math.random() * (max - min)
+
+    /* backdrop and modal */
+    add(animate(q('.pw-backdrop'), { opacity: [0, 1], duration: 400, ease: 'outQuad' }))
+    add(
+      animate(panelRef.current, {
+        opacity: [0, 1],
+        scale: [0.92, 1],
+        translateY: [24, 0],
+        duration: 550,
+        ease: 'outQuart',
+      })
+    )
+
+    /* left panel wipes open */
+    const aside = q('.pw-aside')
+    if (aside.length) {
+      add(
+        animate(aside, {
+          clipPath: ['inset(0 100% 0 0)', 'inset(0 0% 0 0)'],
+          opacity: [0, 1],
+          duration: 800,
+          delay: 100,
+          ease: 'outQuart',
+        })
+      )
+    }
+
+    /* heading lines rise */
+    add(animate(q('.pw-head'), { opacity: [0, 1], translateY: [16, 0], duration: 500, delay: stagger(90, { start: 450 }), ease: 'outQuad' }))
+
+    /* the ring draws itself, the type's own segment lands last */
+    const ringSvg = charRef.current?.querySelector('svg')
+    const ring = ringSvg ? Array.from(ringSvg.querySelectorAll('path')) : []
+    if (ring.length) {
+      const own = TYPES.findIndex(([c]) => c === code)
+      ring.forEach((p) => {
+        p.setAttribute('pathLength', '1')
+        p.style.strokeDasharray = '1'
+        p.style.strokeDashoffset = '1'
+      })
+      add(
+        animate(ring, {
+          strokeDashoffset: [1, 0],
+          duration: 450,
+          ease: 'outQuad',
+          delay: (el, k) => {
+            const rank = k === own ? ring.length - 1 : k < own ? k : k - 1
+            return 700 + rank * 70 + (k === own ? 250 : 0)
+          },
+        })
+      )
+    }
+
+    /* the type letters spin like a slot machine and settle one by one */
+    const letters = q('.pw-letter')
+    if (letters.length) {
+      const finals = letters.map((l) => l.dataset.ch)
+      const st = { p: 0 }
+      let lastFrame = -1
+      letters.forEach((l) => {
+        l.textContent = LETTER_POOL[Math.floor(Math.random() * LETTER_POOL.length)]
+      })
+      add(
+        animate(st, {
+          p: 1,
+          duration: 1300,
+          delay: 600,
+          ease: 'linear',
+          onUpdate: () => {
+            const frame = Math.floor(st.p * 26)
+            letters.forEach((l, i) => {
+              if (st.p >= 0.4 + i * 0.16) {
+                if (l.textContent !== finals[i]) l.textContent = finals[i]
+              } else if (frame !== lastFrame) {
+                l.textContent = LETTER_POOL[Math.floor(Math.random() * LETTER_POOL.length)]
+              }
+            })
+            lastFrame = frame
+          },
+          onComplete: () => letters.forEach((l, i) => (l.textContent = finals[i])),
+        })
+      )
+    }
+
+    /* podium columns rise from #3 up to #1: bars grow, percentages count up */
+    const cols = q('.pw-row')
+    const n = cols.length
+    const BASE = 1000
+    const STEP = 420
+    const delayOf = (i) => BASE + (n - 1 - i) * STEP
+
+    cols.forEach((col, i) => {
+      const d = delayOf(i)
+      const target = Number(col.dataset.pct || 0)
+      const pctEl = col.querySelector('.pw-pct')
+      const bar = col.querySelector('.pw-bar-fill')
+
+      add(
+        animate(col, {
+          opacity: [0, 1],
+          translateY: [30, 0],
+          duration: 500,
+          delay: d,
+          ease: 'outQuad',
+        })
+      )
+      if (bar) add(animate(bar, { height: ['0px', `${BAR_H[i]}px`], duration: 900, delay: d, ease: 'outQuart' }))
+      if (pctEl) {
+        const st = { v: 0 }
+        add(
+          animate(st, {
+            v: target,
+            duration: 900,
+            delay: d,
+            ease: 'outQuad',
+            onUpdate: () => {
+              pctEl.textContent = `${Math.round(st.v)}%`
+            },
+            onComplete: () => {
+              pctEl.textContent = `${target}%`
+            },
+          })
+        )
+      }
+    })
+
+    /* the #1 column finishes last: badge spin, light sweep, confetti */
+    if (n > 0) {
+      const top = delayOf(0)
+      const badge = cols[0].querySelector('.pw-badge')
+      const shimmer = cols[0].querySelector('.pw-shimmer')
+      const pieces = q('.pw-conf')
+
+      if (badge) add(animate(badge, { rotate: [0, 360], scale: [1, 1.35, 1], duration: 750, delay: top + 500, ease: 'outBack' }))
+      if (shimmer) {
+        add(animate(shimmer, { translateX: ['-120%', '420%'], opacity: [0, 1, 0], duration: 900, delay: top + 900, ease: 'inOutSine' }))
+      }
+      if (pieces.length) {
+        pieces.forEach((el) => {
+          el.style.transform = 'none'
+        })
+        add(
+          animate(pieces, {
+            translateX: () => rand(-150, 150),
+            translateY: () => rand(-170, 70),
+            rotate: () => rand(-300, 300),
+            opacity: [1, 0],
+            duration: 1700,
+            delay: stagger(14, { start: top + 700 }),
+            ease: 'outQuad',
+          })
+        )
+      }
+
+      /* then reveal the detail card */
+      later(() => setShown(true), top + 1100)
+    } else {
+      setShown(true)
+    }
+
+    return () => {
+      timers.forEach(clearTimeout)
+      anims.forEach((a) => a.pause?.())
+    }
+    // the sequence plays once, when the modal opens
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /* ---- the detail card builds itself, on reveal and every time another career is chosen ---- */
+  useLayoutEffect(() => {
+    if (!motion || !shown || !detailRef.current) return undefined
+    const card = detailRef.current
+    const qs = (sel) => Array.from(card.querySelectorAll(sel))
+    const anims = []
+
+    const checks = qs('.pw-check path')
+    checks.forEach((p) => {
+      p.setAttribute('pathLength', '1')
+      p.style.strokeDasharray = '1'
+      p.style.strokeDashoffset = '1'
+    })
+    if (checks.length) {
+      anims.push(animate(checks, { strokeDashoffset: [1, 0], duration: 450, delay: stagger(160, { start: 150 }), ease: 'outQuad' }))
+    }
+
+    const whys = qs('.pw-why')
+    if (whys.length) {
+      anims.push(animate(whys, { opacity: [0, 1], translateX: [-14, 0], duration: 420, delay: stagger(160), ease: 'outQuad' }))
+    }
+
+    const chips = qs('.pw-chip')
+    if (chips.length) {
+      anims.push(animate(chips, { opacity: [0, 1], scale: [0.3, 1], duration: 420, delay: stagger(40, { start: 250 }), ease: 'outBack' }))
+    }
+
+    /* the chosen bar regrows (skipped the first time, the countdown already did it) */
+    if (!firstDetail.current && rootRef.current) {
+      const bar = rootRef.current.querySelectorAll('.pw-bar-fill')[index]
+      if (bar) anims.push(animate(bar, { height: ['0px', `${BAR_H[index]}px`], duration: 700, ease: 'outQuart' }))
+    }
+    firstDetail.current = false
+
+    return () => anims.forEach((a) => a.pause?.())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.title, shown])
+
   return (
     <div
+      ref={rootRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="prediction-title"
     >
       <style>{CHARACTER_CSS}</style>
-      <div className="absolute inset-0 bg-[#0b0b2b]/60 backdrop-blur-sm" onClick={busy ? undefined : onClose} />
+      <div className="pw-backdrop absolute inset-0 bg-[#0b0b2b]/60 backdrop-blur-sm" style={hid} onClick={busy ? undefined : onClose} />
 
       <div
+        ref={panelRef}
         data-lenis-prevent
+        style={hid}
         className="relative max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-[#f3e7d6] shadow-2xl md:grid md:grid-cols-[300px_minmax(0,1fr)] md:overflow-hidden"
       >
         <button
@@ -140,24 +396,24 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
           onClick={onClose}
           disabled={busy}
           aria-label="Close"
-          className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-lg text-neutral-600 transition hover:border-[#0b0b2b] hover:text-black disabled:opacity-50"
+          className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-neutral-600 shadow-md transition hover:text-black disabled:opacity-50"
         >
           ×
         </button>
 
         {/* LEFT: character panel */}
         <aside
-          className="flex flex-col items-center justify-center gap-4 p-6 text-center md:gap-5 md:p-8"
-          style={{ background: theme?.tint ?? '#cde6f6' }}
+          className="pw-aside flex flex-col items-center justify-center gap-4 p-6 text-center md:gap-5 md:p-8"
+          style={{ background: theme?.tint ?? '#cde6f6', ...(motion ? { opacity: 0 } : {}) }}
         >
           {theme && (
-            <div className="pw-pop relative w-44 shrink-0 min-[420px]:w-52 md:w-48">
+            <div className="pw-pop relative w-44 shrink-0 min-[420px]:w-52 md:w-48" style={hid}>
               <span
                 className="pw-glow absolute inset-0 rounded-full blur-2xl"
                 style={{ background: theme.dark ?? '#2f80e0' }}
                 aria-hidden="true"
               />
-              <div className="pw-float relative">
+              <div ref={charRef} className="pw-float relative">
                 <MbtiCharacter code={input.mbti} className="w-full" />
               </div>
             </div>
@@ -165,24 +421,31 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
 
           <div className="min-w-0">
             <div
-              className="text-4xl font-black leading-none tracking-tight md:text-5xl"
+              className="text-5xl font-black leading-none tracking-tight md:text-6xl"
               style={{ color: theme?.dark ?? '#245f8a' }}
+              aria-label={code || 'N/A'}
             >
-              {input?.mbti ? String(input.mbti).toUpperCase() : 'N/A'}
+              {code
+                ? code.split('').map((ch, i) => (
+                    <span key={i} className="pw-letter inline-block" data-ch={ch} aria-hidden="true">
+                      {ch}
+                    </span>
+                  ))
+                : 'N/A'}
             </div>
-            {theme?.name && <div className="mt-1 text-base font-extrabold text-black">{theme.name}</div>}
+            {theme?.name && <div className="mt-1.5 text-lg font-extrabold text-black">{theme.name}</div>}
 
             <dl className="mt-4 hidden space-y-2 text-left text-sm md:block">
               {input?.degree && (
-                <div className="rounded-2xl bg-white/60 px-4 py-2.5">
-                  <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Degree</dt>
-                  <dd className="mt-0.5 break-words font-semibold text-neutral-800">{input.degree}</dd>
+                <div className="rounded-2xl bg-white/70 px-4 py-2.5">
+                  <dt className="text-xs font-semibold text-neutral-500">Degree</dt>
+                  <dd className="mt-0.5 break-words font-bold text-neutral-800">{input.degree}</dd>
                 </div>
               )}
               {skills.length > 0 && (
-                <div className="rounded-2xl bg-white/60 px-4 py-2.5">
-                  <dt className="text-xs font-bold uppercase tracking-wide text-neutral-500">Skills used</dt>
-                  <dd className="mt-0.5 font-semibold text-neutral-800">{skills.length} skills</dd>
+                <div className="rounded-2xl bg-white/70 px-4 py-2.5">
+                  <dt className="text-xs font-semibold text-neutral-500">Skills used</dt>
+                  <dd className="mt-0.5 font-bold text-neutral-800">{skills.length} skills</dd>
                 </div>
               )}
             </dl>
@@ -191,18 +454,29 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
 
         {/* RIGHT: results */}
         <section className="min-w-0 p-5 sm:p-8 md:max-h-[92vh] md:overflow-y-auto">
-          <p className="pr-10 text-xs font-bold uppercase tracking-wide text-[#2f80e0]">
+          <p className="pw-head flex items-center gap-2 pr-10 text-sm text-neutral-500" style={hid}>
+            <span className="h-2 w-2 rounded-full bg-[#2f9e62]" aria-hidden="true" />
             Prediction complete · {fmtDate(pred?.createdAt)}
           </p>
-          <h2 id="prediction-title" className="mt-1 text-3xl font-black tracking-tight text-black sm:text-4xl">
+          <h2
+            id="prediction-title"
+            className="pw-head mt-1.5 text-3xl font-black tracking-tight text-black sm:text-4xl"
+            style={hid}
+          >
             Your top 3 career matches
           </h2>
-          <p className="mt-1 text-sm text-neutral-600">Tap a career to see why it fits, then open its roadmap.</p>
+          <p className="pw-head mt-1 text-sm text-neutral-600" style={hid}>
+            Tap a career to see why it fits, then open its roadmap.
+          </p>
 
           {careers.length > 0 ? (
             <>
-              {/* career rows */}
-              <div className="mt-5 flex flex-col gap-2.5" role="radiogroup" aria-label="Choose a career">
+              {/* the podium */}
+              <div
+                className="relative mt-8 grid grid-cols-3 items-end gap-2.5 sm:gap-4"
+                role="radiogroup"
+                aria-label="Choose a career"
+              >
                 {careers.map((c, i) => {
                   const on = i === index
                   const color = RANK_COLORS[i]
@@ -212,29 +486,81 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
                       type="button"
                       role="radio"
                       aria-checked={on}
+                      aria-label={`${i + 1}. ${c.title}, ${pct(c)} percent match`}
                       disabled={busy}
+                      data-pct={pct(c)}
+                      style={hid}
                       onClick={() => setSelected(c.title)}
-                      className={`flex items-center gap-3 rounded-2xl border-2 p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-[#0b0b2b]/30 ${
-                        on ? 'border-[#0b0b2b] bg-white shadow-sm' : 'border-[#e6d8c3] bg-[#fbf6ee] hover:border-[#0b0b2b]/40'
-                      }`}
+                      className={`pw-row group relative flex min-w-0 flex-col text-center focus:outline-none ${RANK_ORDER[i]}`}
                     >
                       <span
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-extrabold"
-                        style={{ background: color, color: i === 1 ? '#0b0b2b' : '#fff' }}
+                        className={`pw-pct text-2xl font-black leading-none sm:text-4xl ${on ? 'text-[#0b0b2b]' : 'text-neutral-500'}`}
                       >
-                        {i + 1}
+                        {motion ? '0%' : `${pct(c)}%`}
                       </span>
 
-                      <span className="min-w-0 flex-1">
-                        <span className="block break-words text-sm font-extrabold leading-snug text-black sm:text-base">
-                          {c.title}
+                      {/* the bar */}
+                      <span
+                        className={`pw-bar-fill relative mt-2.5 flex items-start justify-center overflow-hidden rounded-t-2xl pt-2.5 shadow-md transition-[filter] duration-300 group-focus-visible:ring-4 group-focus-visible:ring-[#0b0b2b]/30 ${
+                          on ? '' : 'grayscale-[.45] group-hover:grayscale-0'
+                        }`}
+                        style={{ height: motion ? '0px' : `${BAR_H[i]}px`, background: color }}
+                      >
+                        <span
+                          className="pw-badge flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-sm font-black sm:h-9 sm:w-9 sm:text-base"
+                          style={{ color: i === 1 ? '#0b0b2b' : color }}
+                        >
+                          {i + 1}
                         </span>
-                        <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-[#e8dcc8]">
-                          <span className="block h-full rounded-full" style={{ width: `${pct(c)}%`, background: color }} />
-                        </span>
+
+                        {/* light strip on top, like the loading bars */}
+                        <span
+                          aria-hidden="true"
+                          className="absolute inset-x-2 top-1.5 h-1.5 rounded-full bg-white/35"
+                        />
+
+                        {/* light sweep, only on the best match */}
+                        {i === 0 && (
+                          <span
+                            aria-hidden="true"
+                            className="pw-shimmer pointer-events-none absolute inset-y-0 left-0 w-1/2"
+                            style={{
+                              opacity: 0,
+                              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent)',
+                            }}
+                          />
+                        )}
                       </span>
 
-                      <span className="w-14 shrink-0 text-right text-xl font-black text-black">{pct(c)}%</span>
+                      {/* ground under the bar; turns navy for the chosen one */}
+                      <span
+                        aria-hidden="true"
+                        className={`block h-1.5 rounded-full transition-colors duration-300 ${on ? 'bg-[#0b0b2b]' : 'bg-[#d9c8ae]'}`}
+                      />
+
+                      <span
+                        className={`mt-2 line-clamp-3 break-words text-[12px] leading-tight sm:text-sm ${
+                          on ? 'font-extrabold text-black' : 'font-semibold text-neutral-600'
+                        }`}
+                      >
+                        {c.title}
+                      </span>
+
+                      {/* confetti: bursts above the #1 bar, hidden until then */}
+                      {i === 0 && motion && (
+                        <span
+                          className="pointer-events-none absolute left-1/2 top-12 z-20 block h-0 w-0"
+                          aria-hidden="true"
+                        >
+                          {Array.from({ length: CONFETTI_COUNT }).map((_, k) => (
+                            <span
+                              key={k}
+                              className={`pw-conf absolute left-0 top-0 block h-2 w-2 ${k % 3 === 0 ? 'rounded-full' : 'rounded-sm'}`}
+                              style={{ background: CONFETTI_COLORS[k % CONFETTI_COLORS.length], opacity: 0 }}
+                            />
+                          ))}
+                        </span>
+                      )}
                     </button>
                   )
                 })}
@@ -242,55 +568,70 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
 
               {/* detail for the chosen career */}
               {current && (
-                <div key={current.title} className="pw-rise mt-4 rounded-3xl border border-[#e6d8c3] bg-white p-5">
-                  {parts.why.length > 0 && (
-                    <>
-                      <div className="text-xs font-bold uppercase tracking-wide text-[#2f80e0]">Why this fits</div>
-                      <ul className="mt-2 space-y-2">
-                        {parts.why.slice(0, 3).map((r, ri) => (
-                          <li key={`${r}-${ri}`} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
-                            <svg
-                              viewBox="0 0 24 24"
-                              className="mt-0.5 h-4 w-4 shrink-0 text-[#2f9e62]"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.4"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                            >
-                              <path d="M5 12.5l4.5 4.5L19 7.5" />
-                            </svg>
-                            <span className="min-w-0 break-words">{r}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-
-                  {(parts.have.length > 0 || parts.need.length > 0) && (
-                    <div className={`grid gap-3 sm:grid-cols-2 ${parts.why.length > 0 ? 'mt-4' : ''}`}>
-                      {parts.have.length > 0 && <SkillBlock label="You already have" items={parts.have} tone="good" />}
-                      {parts.need.length > 0 && <SkillBlock label="Skills to work on" items={parts.need} tone="todo" />}
+                <div className={`mt-6 transition-opacity duration-500 ${shown ? 'opacity-100' : 'opacity-0'}`}>
+                  <div ref={detailRef} key={current.title} className="pw-rise rounded-3xl bg-white p-5 shadow-sm sm:p-6">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <span
+                        className="rounded-full px-3 py-1 text-xs font-extrabold"
+                        style={{ background: RANK_COLORS[index], color: RANK_TEXT[index] }}
+                      >
+                        {RANK_LABEL[index]}
+                      </span>
+                      <span className="text-sm font-bold text-neutral-500">{pct(current)}% match</span>
                     </div>
-                  )}
+                    <h3 className="mt-2 break-words text-xl font-black leading-snug tracking-tight text-black sm:text-2xl">
+                      {current.title}
+                    </h3>
 
-                  {parts.why.length === 0 && parts.have.length === 0 && parts.need.length === 0 && (
-                    <p className="text-sm text-neutral-600">
-                      This recommendation is based on your assessment profile and career-match score.
-                    </p>
-                  )}
+                    {parts.why.length > 0 && (
+                      <>
+                        <div className="mt-4 text-sm font-extrabold text-[#2f80e0]">Why this fits</div>
+                        <ul className="mt-2 space-y-2">
+                          {parts.why.slice(0, 3).map((r, ri) => (
+                            <li key={`${r}-${ri}`} className="pw-why flex gap-2 text-sm leading-relaxed text-neutral-700">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="pw-check mt-0.5 h-4 w-4 shrink-0 text-[#2f9e62]"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.4"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M5 12.5l4.5 4.5L19 7.5" />
+                              </svg>
+                              <span className="min-w-0 break-words">{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+
+                    {(parts.have.length > 0 || parts.need.length > 0) && (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        {parts.have.length > 0 && <SkillBlock label="You already have" items={parts.have} tone="good" />}
+                        {parts.need.length > 0 && <SkillBlock label="Skills to work on" items={parts.need} tone="todo" />}
+                      </div>
+                    )}
+
+                    {parts.why.length === 0 && parts.have.length === 0 && parts.need.length === 0 && (
+                      <p className="mt-3 text-sm text-neutral-600">
+                        This recommendation is based on your assessment profile and career-match score.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="mt-5 rounded-2xl border border-[#e6d8c3] bg-white p-5 text-sm text-neutral-600">
+            <div className="mt-5 rounded-2xl bg-white p-5 text-sm text-neutral-600 shadow-sm">
               Your prediction was saved, but it has no recommended careers to show yet. Open your dashboard to see it.
             </div>
           )}
 
           {error && (
-            <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div role="alert" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
@@ -301,7 +642,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
               type="button"
               onClick={onViewDashboard}
               disabled={busy}
-              className="rounded-full border border-[#d9c8ae] bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-50"
+              className="rounded-full bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-neutral-700 shadow-sm transition hover:text-black hover:shadow-md disabled:opacity-50"
             >
               Go to dashboard
             </button>

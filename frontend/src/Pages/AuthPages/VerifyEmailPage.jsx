@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { animate, stagger } from 'animejs'
 import { verifyEmail, resendVerification } from '../../api/auth' // adjust path if needed
 
 // Palette: page bg #F0E6D6 | card #FAF6EF | input #F3EADB | border #E2D6C3 | navy #0A0A2C
@@ -21,6 +22,7 @@ const VerifyEmailPage = () => {
   const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState(
     initialEmail
@@ -31,11 +33,96 @@ const VerifyEmailPage = () => {
   )
   const [cooldown, setCooldown] = useState(0)
 
+  const pageRef = useRef(null)
+  const codeRef = useRef(null)
+  const buttonRef = useRef(null)
+  const infoRef = useRef(null)
+  const errorRef = useRef(null)
+  const prevCodeLen = useRef(0)
+
+  // Entrance: staggered fade/slide-in
+  useEffect(() => {
+    if (!pageRef.current) return
+    animate(pageRef.current.querySelectorAll('[data-enter]'), {
+      opacity: [0, 1],
+      translateY: [24, 0],
+      delay: stagger(110),
+      duration: 700,
+      ease: 'outExpo',
+    })
+  }, [])
+
+  // Cooldown timer
   useEffect(() => {
     if (cooldown <= 0) return
     const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
     return () => clearTimeout(t)
   }, [cooldown])
+
+  // Error: slide in the alert + shake the code input
+  useEffect(() => {
+    if (!error) return
+    if (errorRef.current) {
+      animate(errorRef.current, {
+        opacity: [0, 1],
+        translateY: [-8, 0],
+        duration: 350,
+        ease: 'outQuad',
+      })
+    }
+    if (codeRef.current) {
+      animate(codeRef.current, {
+        translateX: [
+          { to: -10, duration: 60 },
+          { to: 10, duration: 80 },
+          { to: -6, duration: 60 },
+          { to: 6, duration: 60 },
+          { to: 0, duration: 60 },
+        ],
+        ease: 'inOutSine',
+      })
+    }
+  }, [error])
+
+  // Info: fade in
+  useEffect(() => {
+    if (!info || !infoRef.current) return
+    animate(infoRef.current, {
+      opacity: [0, 1],
+      translateY: [-8, 0],
+      duration: 350,
+      ease: 'outQuad',
+    })
+  }, [info])
+
+  const handleCodeChange = (e) => {
+    const next = e.target.value.replace(/\D/g, '').slice(0, 6)
+    setCode(next)
+
+    // Pop on each new digit
+    if (next.length > prevCodeLen.current && codeRef.current) {
+      animate(codeRef.current, {
+        scale: [
+          { to: 1.04, duration: 80 },
+          { to: 1, duration: 180 },
+        ],
+        ease: 'outQuad',
+      })
+    }
+    prevCodeLen.current = next.length
+  }
+
+  const playSuccess = () => {
+    const targets = [codeRef.current, buttonRef.current].filter(Boolean)
+    animate(targets, {
+      scale: [
+        { to: 1.06, duration: 150 },
+        { to: 1, duration: 250 },
+      ],
+      ease: 'outBack',
+    })
+    return new Promise((resolve) => setTimeout(resolve, 600))
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -51,6 +138,9 @@ const VerifyEmailPage = () => {
     try {
       // verifyEmail() saves the token + user when the backend returns them
       const data = await verifyEmail(email.trim().toLowerCase(), code)
+
+      setSuccess(true)
+      await playSuccess()
 
       if (data.token) {
         navigate('/dashboard', { replace: true }) // logged in automatically
@@ -87,15 +177,21 @@ const VerifyEmailPage = () => {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#F0E6D6] px-4 py-10">
-      <div className="mx-auto mb-6 max-w-xl text-center">
+    <div
+      ref={pageRef}
+      className="flex min-h-screen flex-col items-center justify-center bg-[#F0E6D6] px-4 py-10"
+    >
+      <div data-enter className="mx-auto mb-6 max-w-xl text-center opacity-0">
         <h1 className="text-balance text-4xl font-extrabold leading-tight tracking-tight text-[#0A0A2C]">
           Check your email.
         </h1>
         <p className="mt-3 text-sm text-[#5B564B]">Enter the code to verify your account.</p>
       </div>
 
-      <div className="w-full max-w-[480px] rounded-3xl bg-[#FAF6EF] p-8 shadow-[0_2px_16px_rgba(60,45,20,0.08)]">
+      <div
+        data-enter
+        className="w-full max-w-[480px] rounded-3xl bg-[#FAF6EF] p-8 opacity-0 shadow-[0_2px_16px_rgba(60,45,20,0.08)]"
+      >
         <form onSubmit={handleSubmit} className="space-y-5">
           {!initialEmail && (
             <div>
@@ -120,6 +216,7 @@ const VerifyEmailPage = () => {
               Verification Code
             </label>
             <input
+              ref={codeRef}
               id="code"
               type="text"
               inputMode="numeric"
@@ -127,7 +224,7 @@ const VerifyEmailPage = () => {
               maxLength={6}
               required
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={handleCodeChange}
               placeholder="123456"
               className={`${inputClass} text-center text-xl tracking-[0.5em]`}
             />
@@ -135,6 +232,7 @@ const VerifyEmailPage = () => {
 
           {info && (
             <div
+              ref={infoRef}
               role="status"
               className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700"
             >
@@ -143,6 +241,7 @@ const VerifyEmailPage = () => {
           )}
           {error && (
             <div
+              ref={errorRef}
               role="alert"
               className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
             >
@@ -151,11 +250,12 @@ const VerifyEmailPage = () => {
           )}
 
           <button
+            ref={buttonRef}
             type="submit"
-            disabled={loading}
+            disabled={loading || success}
             className="w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? 'Verifying...' : 'Verify Email'}
+            {success ? 'Verified ✓' : loading ? 'Verifying...' : 'Verify Email'}
           </button>
         </form>
 

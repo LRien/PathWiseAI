@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import anime from 'animejs/lib/anime.es.js' // npm i animejs@3.2.2 (v3 only)
+import { animate, stagger, utils } from 'animejs' // anime.js v4
 
 const S = 30
 const COLS = 11
@@ -191,14 +191,17 @@ const PuzzleBrain = () => {
     // ---- reassemble: everything flows back into the figure
     const reset = () => {
       if (drag) { touch(); return }
-      anime.remove(tiles)
+      utils.remove(tiles)
       cancelAnimationFrame(raf)
       raf = 0
       tiles.forEach((t) => { t.vx = 0; t.vy = 0 })
-      anime({
-        targets: tiles, x: 0, y: 0, rot: 0, s: 1, o: 1,
-        delay: anime.stagger(12, { from: 'center' }),
-        duration: 1300, easing: 'easeOutElastic(1, .7)', update: renderAll,
+      animate(tiles, {
+        x: 0, y: 0, rot: 0, s: 1, o: 1,
+        delay: stagger(12, { from: 'center' }),
+        duration: 1300,
+        ease: 'outElastic(1, .7)',
+        onUpdate: renderAll,
+        onComplete: renderAll,
       })
     }
     function touch() {
@@ -219,7 +222,7 @@ const PuzzleBrain = () => {
       if (!ready || !g || !g.__t) return
       const t = g.__t
       const p = pt(e)
-      anime.remove(tiles)
+      utils.remove(tiles)
       clearTimeout(idleT)
       drag = t
       gx = t.hx + t.x - p.x
@@ -228,7 +231,7 @@ const PuzzleBrain = () => {
       layer.appendChild(t.g)
       svg.style.cursor = 'grabbing'
       svg.setPointerCapture(e.pointerId)
-      anime({ targets: t, s: 1.15, duration: 200, easing: 'easeOutQuad', update: () => render(t) })
+      animate(t, { s: 1.15, duration: 200, ease: 'outQuad', onUpdate: () => render(t) })
       wake()
     }
     const onMove = (e) => {
@@ -246,19 +249,28 @@ const PuzzleBrain = () => {
       const t = drag
       drag = null
       svg.style.cursor = ''
-      anime.remove(t)
+      utils.remove(t)
 
       // attach: dropped close to its own slot -> click back into place
       if (Math.hypot(t.x, t.y) < SNAP) {
         t.vx = 0; t.vy = 0
-        anime({
-          targets: t, x: 0, y: 0, rot: 0, s: 1,
-          duration: 450, easing: 'easeOutElastic(1, .6)', update: () => render(t),
+        animate(t, {
+          x: 0, y: 0, rot: 0, s: 1,
+          duration: 450,
+          ease: 'outElastic(1, .6)',
+          onUpdate: () => render(t),
+          onComplete: () => render(t),
         })
       } else {
         // detach: fling it with the throw velocity
         if (performance.now() - last.t < 80) { t.vx = last.dx * 0.6; t.vy = last.dy * 0.6 }
-        anime({ targets: t, s: 1, duration: 400, easing: 'easeOutElastic(1, .6)', update: () => render(t) })
+        animate(t, {
+          s: 1,
+          duration: 400,
+          ease: 'outElastic(1, .6)',
+          onUpdate: () => render(t),
+          onComplete: () => render(t),
+        })
       }
       touch()
       wake()
@@ -276,25 +288,29 @@ const PuzzleBrain = () => {
       touch()
     } else {
       tiles.forEach((t) => {
-        t.x = anime.random(-320, 320)
-        t.y = anime.random(-380, 380)
-        t.rot = anime.random(-360, 360)
+        t.x = utils.random(-320, 320)
+        t.y = utils.random(-380, 380)
+        t.rot = utils.random(-360, 360)
         t.s = 0.3
         t.o = 0
       })
       renderAll()
-      anime({
-        targets: tiles, x: 0, y: 0, rot: 0, s: 1, o: 1,
-        delay: anime.stagger(10), duration: 1100, easing: 'easeOutElastic(1, .6)',
-        update: renderAll,
-        complete: () => { ready = true; touch() },
+      animate(tiles, {
+        x: 0, y: 0, rot: 0, s: 1, o: 1,
+        delay: stagger(10),
+        duration: 1100,
+        ease: 'outElastic(1, .6)',
+        onUpdate: renderAll,
+        onComplete: () => { renderAll(); ready = true; touch() },
       })
+      // failsafe: never leave the figure invisible or unusable if the intro is interrupted
+      setTimeout(() => { if (!ready) { ready = true; touch() } }, 3000)
     }
 
     return () => {
       clearTimeout(idleT)
       cancelAnimationFrame(raf)
-      anime.remove(tiles)
+      utils.remove(tiles)
       svg.removeEventListener('pointerdown', onDown)
       svg.removeEventListener('pointermove', onMove)
       svg.removeEventListener('pointerup', release)

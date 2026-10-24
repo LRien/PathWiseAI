@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FaCheckCircle } from 'react-icons/fa'
 import * as predApi from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
 
@@ -36,18 +37,10 @@ const fmtDate = (date) => {
 }
 
 const Check = () => (
-  <svg
-    viewBox="0 0 24 24"
+  <FaCheckCircle
     className="mt-0.5 h-4 w-4 shrink-0 text-[#2f9e62]"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
     aria-hidden="true"
-  >
-    <path d="M5 12.5l4.5 4.5L19 7.5" />
-  </svg>
+  />
 )
 
 const RankBadge = ({ index }) => (
@@ -325,10 +318,10 @@ const UserDashboard = () => {
                 className="rounded-3xl p-5 shadow-sm"
                 style={{ background: theme?.tint ?? '#cde6f6' }}
               >
-                <div className="flex items-center gap-4 lg:flex-col lg:text-center">
+                <div className="flex flex-col items-center gap-3 text-center">
                   {theme && (
-                    <div className="w-24 shrink-0 lg:w-40">
-                      <MbtiCharacter code={mbti} className="mx-auto w-full" />
+                    <div className="w-56 shrink-0 sm:w-64 lg:w-40">
+                      <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />
                     </div>
                   )}
 
@@ -427,50 +420,58 @@ const UserDashboard = () => {
             {/* RIGHT: careers, details, avoid */}
             <div className="min-w-0 space-y-4">
               {top.length > 0 && currentCareer ? (
-                <>
-                  {/* Career selector */}
-                  <div className="flex flex-col gap-3">
+                <div className="min-w-0">
+                  {/* Folder tabs */}
+                  <div
+                    role="tablist"
+                    aria-label="Top 3 careers"
+                    className="grid grid-cols-3 gap-1.5 sm:gap-2"
+                  >
                     {top.map((career, index) => {
                       const active = focus === index
                       return (
                         <button
                           key={`${career.title}-${index}`}
                           type="button"
+                          role="tab"
+                          aria-selected={active}
                           onClick={() => setFocus(index)}
-                          aria-pressed={active}
-                          className={`w-full rounded-2xl border p-3 text-left transition ${
+                          className={`relative flex min-w-0 flex-col gap-1 rounded-t-2xl border-2 border-b-0 border-[#0b0b2b] px-3 pb-2 pt-3 text-left transition sm:px-4 ${
                             active
-                              ? 'border-2 border-[#0b0b2b] bg-white shadow-sm'
-                              : 'border-[#e6d8c3] bg-[#fbf6ee] hover:border-[#aaa0bc]'
+                              ? 'z-10 -mb-[2px] bg-white'
+                              : 'mt-2 bg-[#fff4b8] hover:bg-[#ffee94]'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <RankBadge index={index} />
+                          <span
+                            aria-hidden="true"
+                            className="h-1.5 w-10 rounded-full"
+                            style={{ background: RANK_COLORS[index] }}
+                          />
 
-                            <span className="min-w-0 flex-1 break-words text-sm font-extrabold leading-tight text-black">
-                              {career.title}
-                              {selectedTitle === career.title && (
-                                <span className="ml-2 text-xs font-bold text-[#2f9e62]">
-                                  Selected ✓
-                                </span>
-                              )}
-                            </span>
+                          <span className="line-clamp-2 break-words text-xs font-extrabold leading-tight text-black sm:text-sm">
+                            {career.title}
+                          </span>
 
-                            <div className="hidden w-32 sm:block">
-                              <MatchBar value={pct(career)} color={RANK_COLORS[index]} />
-                            </div>
-
-                            <span className="w-12 shrink-0 text-right text-base font-black text-black">
-                              {pct(career)}%
-                            </span>
-                          </div>
+                          <span className="flex items-center gap-2">
+                            <span className="text-sm font-black text-black">{pct(career)}%</span>
+                            {selectedTitle === career.title && (
+                              <span className="text-[10px] font-bold text-[#2f9e62] sm:text-xs">
+                                Selected ✓
+                              </span>
+                            )}
+                          </span>
                         </button>
                       )
                     })}
                   </div>
 
-                  {/* Detail panel */}
-                  <section className="min-w-0 rounded-3xl border border-[#e6d8c3] bg-white p-5 shadow-sm sm:p-6">
+                  {/* Folder body */}
+                  <section
+                    role="tabpanel"
+                    className={`relative min-w-0 rounded-bl-3xl rounded-br-3xl border-2 border-[#0b0b2b] bg-white p-5 shadow-sm sm:p-6 ${
+                      focus === 0 ? 'rounded-tl-none' : 'rounded-tl-3xl'
+                    } ${focus === top.length - 1 ? 'rounded-tr-none' : 'rounded-tr-3xl'}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <RankBadge index={focus} />
@@ -554,7 +555,7 @@ const UserDashboard = () => {
                       </button>
                     </div>
                   </section>
-                </>
+                </div>
               ) : (
                 <section className="rounded-3xl border border-[#e6d8c3] bg-white p-6">
                   <h2 className="text-lg font-extrabold text-black">

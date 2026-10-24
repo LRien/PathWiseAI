@@ -392,14 +392,301 @@ const EMOTES = [
   },
 ]
 
+/* ---------- Cheers: used in cheer mode, when the character cheers the person on ----------
+   Same parts and helpers as the emotes above. P is the parts object (P.fig, P.head, P.arm, P.prop,
+   P.pupils, P.mk, P.an, P.dk). */
+const CONF = ['#e0574a', '#e8c34a', '#5fbf7a', '#3d8fc4', '#a56be0']
+const heart = (x, y, s = 6, f = '#e0574a') =>
+  `<path d="M${x} ${y + s * 0.7} C${x - s * 1.2} ${y - s * 0.1} ${x - s * 0.7} ${y - s} ${x} ${y - s * 0.35} C${x + s * 0.7} ${y - s} ${x + s * 1.2} ${y - s * 0.1} ${x} ${y + s * 0.7}Z" fill="${f}"/>`
+
+/* start, hi, lo, n: [start, hi, lo, hi, lo, ... , end] for repeating waves, hops and sways */
+const osc = (start, hi, lo, n, end = start) => [start, ...Array.from({ length: n * 2 }, (_, k) => (k % 2 ? lo : hi)), end]
+
+/* stars flying out from a point */
+const burst = ({ mk, an }, cx, cy, n, r, delay = 0, fill = '#f5c518') => {
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2 + 0.4
+    const dx = Math.cos(a) * r
+    const dy = Math.sin(a) * r
+    an(mk(star(cx, cy, 6, k % 2 ? CONF[k % 5] : fill)), [
+      { opacity: 0, transform: 'translate(0px,0px) scale(.2)' },
+      { opacity: 1, transform: `translate(${(dx * 0.6).toFixed(1)}px,${(dy * 0.6).toFixed(1)}px) scale(1.1)`, offset: 0.3 },
+      { opacity: 0, transform: `translate(${dx.toFixed(1)}px,${dy.toFixed(1)}px) scale(.3)` },
+    ], 900, { delay: delay + k * 25, easing: 'ease-out' })
+  }
+}
+
+/* confetti falling from the top */
+const rain = ({ mk, an }, n, delay = 0, colors = CONF) => {
+  for (let k = 0; k < n; k++) {
+    const x = 26 + ((k * 37) % 148)
+    const y = 14 + ((k * 23) % 36)
+    an(mk(`<polygon points="${x},${y - 4} ${x + 3},${y} ${x},${y + 4} ${x - 3},${y}" fill="${colors[k % colors.length]}"/>`), [
+      { opacity: 0, transform: 'translateY(-8px) rotate(0deg)' },
+      { opacity: 1, transform: 'translateY(6px) rotate(70deg)', offset: 0.2 },
+      { opacity: 1, transform: 'translateY(40px) rotate(160deg)', offset: 0.75 },
+      { opacity: 0, transform: 'translateY(62px) rotate(220deg)' },
+    ], 1500, { delay: delay + k * 90, easing: 'ease-in' })
+  }
+}
+
+/* shapes that float up and fade, one after another */
+const risers = ({ mk, an }, pts, make, delay = 0, ms = 1300) =>
+  pts.forEach(([x, y], k) =>
+    an(mk(make(x, y, k)), [
+      { opacity: 0, transform: 'translateY(8px) scale(.4)' },
+      { opacity: 1, transform: 'translateY(-4px) scale(1)', offset: 0.3 },
+      { opacity: 0, transform: 'translateY(-32px) scale(.7)' },
+    ], ms, { delay: delay + k * 220, easing: 'ease-out' })
+  )
+
+/* expanding rings */
+const pulses = ({ mk, an }, cx, cy, r, color, delays) =>
+  delays.forEach((d) =>
+    an(mk(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="3"/>`), [
+      { opacity: 0.8, transform: 'scale(1)' },
+      { opacity: 0, transform: 'scale(3)' },
+    ], 800, { delay: d, easing: 'ease-out' })
+  )
+
+/* a check mark that draws itself */
+const tick = ({ mk, an }, d, color, delay = 0) => {
+  const g = mk(`<path d="${d}" pathLength="1" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1" stroke-dashoffset="1"/>`)
+  an(g.firstElementChild, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], 450, { delay, easing: 'ease-out' })
+  an(g, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }], 1700, { delay })
+}
+
+const CHEERS = [
+  /* INTJ Architect: precise fist pumps while a check mark is ticked off */
+  (P, run) => {
+    const D = 2600
+    run(P.arm, osc('rotate(0deg)', 'rotate(-150deg)', 'rotate(-112deg)', 3), D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-5px)', 'translateY(0px)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-5deg)', 'rotate(0deg)', 3), D)
+    tick(P, 'M138 110 l10 11 l22 -26', '#2f9e62', 450)
+    burst(P, 154, 72, 6, 24, 1300)
+  },
+  /* INTP Logician: lifts the bubbling flask and hops with joy */
+  (P, run) => {
+    const D = 2800
+    run(P.prop, ['rotate(0deg) translateY(0px)', 'rotate(-16deg) translateY(-18px)', 'rotate(10deg) translateY(-18px)', 'rotate(-16deg) translateY(-18px)', 'rotate(10deg) translateY(-18px)', 'rotate(0deg) translateY(0px)'], D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-10px)', 'translateY(0px)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(6deg)', 'rotate(-6deg)', 3), D)
+    run(P.pupils, ['translate(0px,0px)', 'translate(0px,-2px)', 'translate(0px,0px)'], D)
+    risers(P, [[52, 92], [64, 84], [46, 76], [60, 68]], (x, y) => `<circle cx="${x}" cy="${y}" r="5" fill="#9fd8e8" stroke="${P.dk}" stroke-width="1.5"/>`, 300)
+    burst(P, 56, 80, 6, 26, 1000)
+  },
+  /* ENTJ Commander: sword thrust to the sky, victory pulses */
+  (P, run) => {
+    const D = 2600
+    run(P.prop, ['translateY(0px) rotate(0deg)', 'translateY(-22px) rotate(-10deg)', 'translateY(-22px) rotate(10deg)', 'translateY(-22px) rotate(-10deg)', 'translateY(-22px) rotate(10deg)', 'translateY(0px) rotate(0deg)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-172deg)', 'rotate(-160deg)', 'rotate(-172deg)', 'rotate(-160deg)', 'rotate(0deg)'], D)
+    run(P.fig, ['scale(1)', 'scale(1.07)', 'scale(1.07)', 'scale(1.07)', 'scale(1.07)', 'scale(1)'], D)
+    run(P.head, ['rotate(0deg)', 'rotate(-5deg)', 'rotate(-5deg)', 'rotate(-5deg)', 'rotate(-5deg)', 'rotate(0deg)'], D)
+    pulses(P, 56, 80, 10, '#e8b830', [400, 1000, 1600])
+    burst(P, 56, 56, 8, 32, 500)
+  },
+  /* ENTP Debater: waves both excitement and "!" marks, confetti pops */
+  (P, run) => {
+    const D = 2400
+    run(P.arm, osc('rotate(0deg)', 'rotate(-155deg)', 'rotate(-120deg)', 4), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(6deg)', 'rotate(-6deg)', 4), D)
+    run(P.prop, osc('rotate(0deg) translateY(0px)', 'rotate(-10deg) translateY(-10px)', 'rotate(0deg) translateY(-4px)', 3), D)
+    ;[[150, 48], [38, 54]].forEach(([x, y], k) => {
+      const e = P.mk(`<text x="${x}" y="${y}" font-size="30" font-weight="900" text-anchor="middle" fill="#f5c518" stroke="${P.dk}" stroke-width="1" font-family="${FONT}">!</text>`)
+      P.an(e, [{ opacity: 0, transform: 'scale(.2) rotate(-12deg)' }, { opacity: 1, transform: 'scale(1.3) rotate(8deg)', offset: 0.3 }, { opacity: 1, transform: 'scale(1) rotate(0deg)', offset: 0.6 }, { opacity: 0, transform: 'scale(.6)' }], 1100, { delay: 300 + k * 600 })
+    })
+    rain(P, 8, 500)
+  },
+  /* INFJ Advocate: floats up, the staff glows and hearts drift upward */
+  (P, run) => {
+    const D = 2800
+    run(P.fig, ['translateY(0px)', 'translateY(-14px)', 'translateY(-9px)', 'translateY(-14px)', 'translateY(-9px)', 'translateY(0px)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-140deg)', 'rotate(-120deg)', 'rotate(-140deg)', 'rotate(0deg)'], D)
+    run(P.prop, ['rotate(0deg) translateY(0px)', 'rotate(-12deg) translateY(-8px)', 'rotate(8deg) translateY(-8px)', 'rotate(-12deg) translateY(-8px)', 'rotate(0deg) translateY(0px)'], D)
+    run(P.head, ['rotate(0deg)', 'rotate(-5deg)', 'rotate(5deg)', 'rotate(-5deg)', 'rotate(0deg)'], D)
+    const halo = P.mk(glowDef('mbmg') + '<circle cx="56" cy="61" r="26" fill="url(#mbmg)"/>', P.prop)
+    P.an(halo, [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 0.95, transform: 'scale(1)', offset: 0.25 }, { opacity: 0.5, transform: 'scale(.8)', offset: 0.5 }, { opacity: 0.95, transform: 'scale(1.1)', offset: 0.75 }, { opacity: 0, transform: 'scale(.4)' }], D)
+    risers(P, [[36, 90], [160, 96], [52, 62], [148, 60], [100, 28], [76, 40]], (x, y, k) => heart(x, y, 7, k % 2 ? '#e8759a' : '#a56be0'), 300, 1500)
+  },
+  /* INFP Mediator: holds the lamp up and sways it like a concert light */
+  (P, run) => {
+    const D = 3000
+    run(P.prop, ['translateY(0px) rotate(0deg)', 'translateY(-18px) rotate(-14deg)', 'translateY(-18px) rotate(12deg)', 'translateY(-18px) rotate(-14deg)', 'translateY(-18px) rotate(12deg)', 'translateY(0px) rotate(0deg)'], D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-6deg)', 'rotate(6deg)', 2), D)
+    run(P.fig, osc('rotate(0deg)', 'rotate(-2deg)', 'rotate(2deg)', 2), D)
+    const halo = P.mk(glowDef('mblamp') + '<circle cx="56" cy="115" r="46" fill="url(#mblamp)"/>', P.prop)
+    P.an(halo, [{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)', offset: 0.25 }, { opacity: 0.7, transform: 'scale(.9)', offset: 0.5 }, { opacity: 1, transform: 'scale(1.05)', offset: 0.75 }, { opacity: 0, transform: 'scale(.4)' }], D)
+    risers(P, [[34, 96], [84, 90], [58, 70], [150, 60], [160, 100]], (x, y, k) => (k % 2 ? star(x, y, 5) : heart(x, y, 6, '#e8759a')), 400, 1500)
+  },
+  /* ENFJ Protagonist: shield raised high, rings of encouragement and hearts */
+  (P, run) => {
+    const D = 2700
+    run(P.prop, ['translateY(0px) scale(1)', 'translateY(-48px) scale(1.3)', 'translateY(-48px) scale(1.3)', 'translateY(-48px) scale(1.3)', 'translateY(0px) scale(1)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-155deg)', 'rotate(-135deg)', 'rotate(-155deg)', 'rotate(0deg)'], D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-8px)', 'translateY(0px)', 3), D)
+    run(P.head, ['rotate(0deg)', 'rotate(-4deg)', 'rotate(4deg)', 'rotate(-4deg)', 'rotate(0deg)'], D)
+    pulses(P, 55, 75, 22, P.dk, [600, 1200, 1800])
+    risers(P, [[34, 60], [150, 56], [100, 24]], (x, y) => heart(x, y, 8, '#e0574a'), 700, 1400)
+    burst(P, 55, 60, 6, 30, 500)
+  },
+  /* ENFP Campaigner: big jumps, hat-tip wave and a confetti shower */
+  (P, run) => {
+    const D = 2600
+    run(P.fig, ['translateY(0px)', 'translateY(-26px)', 'translateY(0px)', 'translateY(-26px)', 'translateY(0px)', 'translateY(-30px)', 'translateY(0px)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-170deg)', 'rotate(-140deg)', 'rotate(-170deg)', 'rotate(-140deg)', 'rotate(-170deg)', 'rotate(0deg)'], D)
+    run(P.prop, osc('rotate(0deg)', 'rotate(-14deg)', 'rotate(10deg)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(6deg)', 'rotate(-6deg)', 3), D)
+    rain(P, 12, 200)
+    burst(P, 100, 36, 8, 44, 1100)
+  },
+  /* ISTJ Logistician: stamps the spear three times, ticking off a checklist */
+  (P, run) => {
+    const D = 2600
+    run(P.prop, ['translateY(0px)', 'translateY(-14px)', 'translateY(0px)', 'translateY(-14px)', 'translateY(0px)', 'translateY(-14px)', 'translateY(0px)'], D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-4px)', 'translateY(0px)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-3deg)', 'rotate(0deg)', 3), D)
+    ;[[146, 48], [146, 72], [146, 96]].forEach(([x, y], k) => tick(P, `M${x} ${y} l7 8 l15 -18`, '#2f9e62', 300 + k * 500))
+    burst(P, 56, 70, 6, 24, 1700)
+  },
+  /* ISFJ Defender: hugs the air and a big warm heart beats in front of the chest */
+  (P, run) => {
+    const D = 2800
+    run(P.arm, ['rotate(0deg)', 'rotate(38deg)', 'rotate(38deg)', 'rotate(38deg)', 'rotate(38deg)', 'rotate(0deg)'], D)
+    run(P.head, ['rotate(0deg)', 'rotate(-6deg)', 'rotate(-6deg)', 'rotate(-6deg)', 'rotate(-6deg)', 'rotate(0deg)'], D)
+    run(P.fig, ['scale(1)', 'scale(1.03)', 'scale(1)', 'scale(1.03)', 'scale(1)', 'scale(1)'], D)
+    const h = P.mk(heart(100, 112, 16, '#e0574a'))
+    P.an(h, [
+      { opacity: 0, transform: 'scale(.2)' },
+      { opacity: 1, transform: 'scale(1.25)', offset: 0.2 },
+      { opacity: 1, transform: 'scale(.95)', offset: 0.32 },
+      { opacity: 1, transform: 'scale(1.25)', offset: 0.46 },
+      { opacity: 1, transform: 'scale(.95)', offset: 0.58 },
+      { opacity: 1, transform: 'scale(1.25)', offset: 0.72 },
+      { opacity: 0, transform: 'scale(.4)' },
+    ], D, { delay: 300 })
+    risers(P, [[40, 70], [160, 76], [60, 40]], (x, y, k) => heart(x, y, 6, k % 2 ? '#e8759a' : '#e0574a'), 900, 1400)
+  },
+  /* ESTJ Executive: flexes, pumps up and shock arcs ripple out */
+  (P, run) => {
+    const D = 2400
+    run(P.fig, ['scale(1)', 'scale(1.1)', 'scale(1.04)', 'scale(1.1)', 'scale(1.04)', 'scale(1.1)', 'scale(1)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-125deg)', 'rotate(-112deg)', 'rotate(-125deg)', 'rotate(-112deg)', 'rotate(-125deg)', 'rotate(0deg)'], D)
+    run(P.prop, osc('rotate(0deg)', 'rotate(-8deg)', 'rotate(8deg)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-5deg)', 'rotate(0deg)', 3), D)
+    ;[0, 1, 2].forEach((k) => {
+      const r = P.mk(`<path d="M126 60 Q140 76 126 92" fill="none" stroke="${P.dk}" stroke-width="3.5" stroke-linecap="round"/>`)
+      P.an(r, [{ opacity: 0, transform: 'translateX(-6px) scale(.6)' }, { opacity: 0.9, transform: 'translateX(2px) scale(.9)', offset: 0.25 }, { opacity: 0, transform: 'translateX(22px) scale(1.4)' }], 700, { delay: 400 + k * 260, easing: 'ease-out' })
+      const l = P.mk(`<path d="M74 60 Q60 76 74 92" fill="none" stroke="${P.dk}" stroke-width="3.5" stroke-linecap="round"/>`)
+      P.an(l, [{ opacity: 0, transform: 'translateX(6px) scale(.6)' }, { opacity: 0.9, transform: 'translateX(-2px) scale(.9)', offset: 0.25 }, { opacity: 0, transform: 'translateX(-22px) scale(1.4)' }], 700, { delay: 400 + k * 260, easing: 'ease-out' })
+    })
+    burst(P, 100, 30, 8, 40, 700)
+  },
+  /* ESFJ Consul: waves the flag proudly, confetti and hearts fall */
+  (P, run) => {
+    const D = 2800
+    run(P.prop, ['translateY(0px) rotate(0deg) skewY(0deg)', 'translateY(-34px) rotate(-4deg) skewY(-6deg)', 'translateY(-34px) rotate(-4deg) skewY(6deg)', 'translateY(-34px) rotate(-4deg) skewY(-6deg)', 'translateY(-34px) rotate(-4deg) skewY(6deg)', 'translateY(-34px) rotate(-4deg) skewY(-6deg)', 'translateY(0px) rotate(0deg) skewY(0deg)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-150deg)', 'rotate(-110deg)', 'rotate(-150deg)', 'rotate(-110deg)', 'rotate(-150deg)', 'rotate(0deg)'], D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-8px)', 'translateY(0px)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-5deg)', 'rotate(5deg)', 3), D)
+    rain(P, 12, 300)
+    risers(P, [[40, 64], [160, 72], [100, 30]], (x, y) => heart(x, y, 7, '#e0574a'), 900, 1400)
+  },
+  /* ISTP Virtuoso: cool dagger flip finished with a thumbs-up and a glint */
+  (P, run) => {
+    const D = 2600
+    run(P.prop, ['translateY(0px) rotate(0deg)', 'translateY(-14px) rotate(360deg)', 'translateY(-14px) rotate(720deg)', 'translateY(0px) rotate(720deg)'], D, '55px 114px')
+    run(P.arm, ['rotate(0deg)', 'rotate(-78deg)', 'rotate(-78deg)', 'rotate(-78deg)', 'rotate(0deg)'], D)
+    run(P.head, ['rotate(0deg)', 'rotate(6deg)', 'rotate(6deg)', 'rotate(6deg)', 'rotate(0deg)'], D)
+    run(P.pupils, ['translate(0px,0px)', 'translate(2px,0px)', 'translate(2px,0px)', 'translate(0px,0px)'], D)
+    const gl = P.mk(star(108, 58, 6, '#fff'), P.head)
+    P.an(gl, [{ opacity: 0, transform: 'scale(.2)' }, { opacity: 0, transform: 'scale(.2)', offset: 0.55 }, { opacity: 1, transform: 'scale(1.4)', offset: 0.65 }, { opacity: 0, transform: 'scale(.3)' }], D)
+    burst(P, 56, 100, 6, 28, 500)
+  },
+  /* ISFP Adventurer: holds up the map, sways happily, petals drift down */
+  (P, run) => {
+    const D = 3000
+    run(P.prop, ['translateY(0px) rotate(0deg) scale(1)', 'translateY(-14px) rotate(-8deg) scale(1.5)', 'translateY(-14px) rotate(8deg) scale(1.5)', 'translateY(-14px) rotate(-8deg) scale(1.5)', 'translateY(-14px) rotate(8deg) scale(1.5)', 'translateY(0px) rotate(0deg) scale(1)'], D)
+    run(P.fig, osc('rotate(0deg)', 'rotate(-3deg)', 'rotate(3deg)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(7deg)', 'rotate(-7deg)', 3), D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-60deg)', 'rotate(-30deg)', 'rotate(-60deg)', 'rotate(-30deg)', 'rotate(0deg)'], D)
+    rain(P, 12, 300, ['#f4a3c0', '#f7c6d8', '#e8759a', '#fbd0e0'])
+  },
+  /* ESTP Entrepreneur: slashes and lunges while coins shower up */
+  (P, run) => {
+    const D = 2400
+    run(P.prop, ['rotate(0deg)', 'rotate(-80deg)', 'rotate(60deg)', 'rotate(-80deg)', 'rotate(60deg)', 'rotate(0deg)'], D)
+    run(P.fig, ['translateX(0px) rotate(0deg)', 'translateX(-6px) rotate(-3deg)', 'translateX(8px) rotate(4deg)', 'translateX(-6px) rotate(-3deg)', 'translateX(8px) rotate(4deg)', 'translateX(0px) rotate(0deg)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-140deg)', 'rotate(-120deg)', 'rotate(-140deg)', 'rotate(-120deg)', 'rotate(0deg)'], D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-4deg)', 'rotate(5deg)', 2), D)
+    risers(P, [[40, 40], [160, 50], [70, 24], [130, 20], [100, 36]], (x, y) => `<circle cx="${x}" cy="${y}" r="7" fill="#f5c518" stroke="#b8860b" stroke-width="2"/><polygon points="${x},${y - 3} ${x + 3},${y} ${x},${y + 3} ${x - 3},${y}" fill="#fff6a8"/>`, 300, 1400)
+    burst(P, 56, 90, 6, 30, 600)
+  },
+  /* ESFP Entertainer: full dance party with music notes and confetti */
+  (P, run) => {
+    const D = 3000
+    run(P.fig, ['rotate(0deg) translateY(0px)', 'rotate(-10deg) translateY(-14px)', 'rotate(0deg) translateY(0px)', 'rotate(10deg) translateY(-14px)', 'rotate(0deg) translateY(0px)', 'rotate(-10deg) translateY(-14px)', 'rotate(0deg) translateY(0px)', 'rotate(10deg) translateY(-14px)', 'rotate(0deg) translateY(0px)'], D)
+    run(P.arm, ['rotate(0deg)', 'rotate(-165deg)', 'rotate(-115deg)', 'rotate(-165deg)', 'rotate(-115deg)', 'rotate(-165deg)', 'rotate(-115deg)', 'rotate(-165deg)', 'rotate(0deg)'], D)
+    run(P.prop, osc('translateY(0px)', 'translateY(-14px)', 'translateY(0px)', 4), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(7deg)', 'rotate(-7deg)', 4), D)
+    rain(P, 12, 200)
+    risers(P, [[34, 74], [168, 80], [30, 120], [170, 122], [52, 44]], (x, y, k) => txt(['♪', '♫'][k % 2], x, y, 20, P.dk), 300, 1400)
+  },
+]
+
+/* ---------- Greetings: the first thing a cheering character does, by group ---------- */
+const GREETS = [
+  /* analysts: a polite, measured wave and a nod */
+  (P, run) => {
+    const D = 2300
+    run(P.arm, osc('rotate(0deg)', 'rotate(-150deg)', 'rotate(-122deg)', 3), D)
+    run(P.head, ['rotate(0deg)', 'rotate(4deg)', 'rotate(0deg)', 'rotate(4deg)', 'rotate(0deg)'], D)
+    run(P.pupils, ['translate(0px,0px)', 'translate(0px,1px)', 'translate(0px,0px)'], D)
+    burst(P, 152, 70, 4, 18, 500)
+  },
+  /* diplomats: a warm, big wave with hearts */
+  (P, run) => {
+    const D = 2400
+    run(P.arm, osc('rotate(0deg)', 'rotate(-155deg)', 'rotate(-118deg)', 4), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(-6deg)', 'rotate(5deg)', 2), D)
+    run(P.fig, osc('rotate(0deg)', 'rotate(-2deg)', 'rotate(2deg)', 2), D)
+    risers(P, [[34, 70], [160, 64], [48, 40]], (x, y, k) => heart(x, y, 7, k % 2 ? '#e8759a' : '#e0574a'), 400)
+  },
+  /* sentinels: a proud salute */
+  (P, run) => {
+    const D = 2200
+    run(P.arm, ['rotate(0deg)', 'rotate(-168deg)', 'rotate(-168deg)', 'rotate(-168deg)', 'rotate(0deg)'], D)
+    run(P.fig, ['scale(1)', 'scale(1.04)', 'scale(1.04)', 'scale(1.04)', 'scale(1)'], D)
+    run(P.head, ['rotate(0deg)', 'rotate(-3deg)', 'rotate(-3deg)', 'rotate(0deg)'], D)
+    burst(P, 100, 30, 6, 26, 600)
+  },
+  /* explorers: a bouncy, excited wave */
+  (P, run) => {
+    const D = 2200
+    run(P.arm, osc('rotate(0deg)', 'rotate(-160deg)', 'rotate(-120deg)', 4), D)
+    run(P.fig, osc('translateY(0px)', 'translateY(-10px)', 'translateY(0px)', 3), D)
+    run(P.head, osc('rotate(0deg)', 'rotate(7deg)', 'rotate(-7deg)', 2), D)
+    burst(P, 100, 40, 8, 40, 500)
+  },
+]
+
 const NS = 'http://www.w3.org/2000/svg'
 const EMOTE_GAP = 5200 // ms between emote repeats
+const GREET_GAP = 2800 // greeting, then the first cheer
+const CHEER_GAP = 4800 // ms between cheers
 
 /* ring of 16 segments (the type's own segment is solid) with the animated character inside.
-   animate={false} turns the movement off. */
-const MbtiCharacter = ({ code, className = '', animate = true }) => {
+   animate={false} turns the movement off.
+   cheer: the character greets the viewer, then keeps cheering with its own moves.
+   celebrate: change this number to make a cheering character celebrate right away.
+   onBeat(kind): called when a greet / cheer / celebrate / emote starts (lets the page sync its words). */
+const MbtiCharacter = ({ code, className = '', animate = true, cheer = false, celebrate = 0, onBeat }) => {
   const i = idxOf(code)
   const ref = useRef(null)
+  const beatRef = useRef(onBeat)
+  beatRef.current = onBeat
+  const celebrateRef = useRef(null)
+  const lastCelebrate = useRef(celebrate)
 
   useEffect(() => {
     const ch = ref.current
@@ -428,8 +715,10 @@ const MbtiCharacter = ({ code, className = '', animate = true }) => {
       fxNodes = []
     }
 
-    const playEmote = () => {
+    /* kind: 'emote' (signature move) | 'greet' | 'cheer' | 'celebrate' */
+    const play = (kind) => {
       stopEmote()
+      if (beatRef.current) beatRef.current(kind)
       const q = (s) => ch.querySelector(s)
       const dk = PAL[Math.floor(i / 4)][2]
       const parts = { fig: q('.mb-fig'), head: q('.mb-head'), arm: q('.mb-arm'), prop: q('.mb-lprop'), pupils: q('.mb-pupils'), dk }
@@ -450,11 +739,16 @@ const MbtiCharacter = ({ code, className = '', animate = true }) => {
       }
       parts.mk = mk
       parts.an = an
-      EMOTES[i](parts, run)
-      emoteT = setTimeout(playEmote, EMOTE_GAP)
+      const fn = kind === 'greet' ? GREETS[Math.floor(i / 4)] : cheer ? CHEERS[i] : EMOTES[i]
+      fn(parts, run)
+      emoteT = setTimeout(
+        () => play(cheer ? 'cheer' : 'emote'),
+        kind === 'greet' ? GREET_GAP : cheer ? CHEER_GAP : EMOTE_GAP
+      )
     }
 
-    emoteT = setTimeout(playEmote, 900)
+    emoteT = setTimeout(() => play(cheer ? 'greet' : 'emote'), 900)
+    celebrateRef.current = cheer ? () => play('celebrate') : null
 
     /* eyes and head follow the pointer */
     const onMove = (e) => {
@@ -470,9 +764,17 @@ const MbtiCharacter = ({ code, className = '', animate = true }) => {
 
     return () => {
       stopEmote()
+      celebrateRef.current = null
       removeEventListener('pointermove', onMove)
     }
-  }, [i, animate])
+  }, [i, animate, cheer])
+
+  /* a changed `celebrate` number triggers an immediate celebration */
+  useEffect(() => {
+    if (lastCelebrate.current === celebrate) return
+    lastCelebrate.current = celebrate
+    if (celebrateRef.current) celebrateRef.current()
+  }, [celebrate])
 
   if (i < 0) return null
   return (

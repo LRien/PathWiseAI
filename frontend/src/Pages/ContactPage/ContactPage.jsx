@@ -1,7 +1,10 @@
 import React, { useState } from 'react'
 
+const CONTACT_EMAIL = 'careermatchpathwiseai@gmail.com'
+const SUBMIT_URL = `https://formsubmit.co/ajax/${CONTACT_EMAIL}`
+
 const INFO = [
-  { label: 'EMAIL', value: 'researchteam@gmail.com' },
+  { label: 'EMAIL', value: CONTACT_EMAIL },
   { label: 'INSTITUTION', value: 'Eulogio “Amang” Rodriguez Institute of Science and Technology (EARIST)' },
   { label: 'THESIS STUDY', value: 'Personality-Based Career Guidance System Using Machine Learning' },
 ]
@@ -10,20 +13,42 @@ const EMPTY = { firstName: '', lastName: '', email: '', subject: '', message: ''
 
 const ContactPage = () => {
   const [form, setForm] = useState(EMPTY)
-  const [sent, setSent] = useState(false)
+  const [status, setStatus] = useState('idle') // idle | sending | sent | error
 
   const onChange = (e) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
-    if (sent) setSent(false)
+    if (status === 'sent' || status === 'error') setStatus('idle')
   }
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault()
-    // TODO: send `form` to your Express API, e.g.
-    // await fetch(`${import.meta.env.VITE_API_URL}/contact`, { method: 'POST', ... })
-    console.log(form)
-    setForm(EMPTY)
-    setSent(true)
+
+    // Honeypot: bots fill hidden fields, real users don't
+    if (e.target.elements._honey?.value) return
+
+    setStatus('sending')
+    try {
+      const res = await fetch(SUBMIT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          name: `${form.firstName} ${form.lastName}`.trim(),
+          email: form.email, // used as the reply-to address
+          subject: form.subject,
+          message: form.message,
+          _subject: `[Career Match] ${form.subject}`,
+          _template: 'table',
+          _captcha: 'false',
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.success === 'false' || data.success === false) throw new Error('Failed')
+
+      setForm(EMPTY)
+      setStatus('sent')
+    } catch {
+      setStatus('error')
+    }
   }
 
   return (
@@ -49,6 +74,16 @@ const ContactPage = () => {
       <section className="contact__form-wrap" aria-labelledby="contact-form-title">
         <form className="contact__form" onSubmit={onSubmit}>
           <h2 id="contact-form-title" className="contact__form-title">Send Us a Message</h2>
+
+          {/* honeypot, hidden from real users */}
+          <input
+            type="text"
+            name="_honey"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+          />
 
           <div className="contact__row">
             <div className="contact__field">
@@ -117,14 +152,20 @@ const ContactPage = () => {
           </div>
 
           <div className="contact__actions">
-            <button type="submit" className="contact__btn">
-              Send Message <span aria-hidden="true">→</span>
+            <button type="submit" className="contact__btn" disabled={status === 'sending'}>
+              {status === 'sending' ? 'Sending...' : <>Send Message <span aria-hidden="true">→</span></>}
             </button>
           </div>
 
-          {sent && (
+          {status === 'sent' && (
             <p className="contact__success" role="status">
               Thanks! Your message has been sent.
+            </p>
+          )}
+
+          {status === 'error' && (
+            <p className="contact__success contact__error" role="alert" style={{ color: '#c0392b' }}>
+              Something went wrong. Please try again or email us at {CONTACT_EMAIL}.
             </p>
           )}
 

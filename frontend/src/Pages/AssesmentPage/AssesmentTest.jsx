@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import { animate, stagger } from 'animejs'
 import { submitAssessment } from '../../api/assessment'
 import { getPrediction, selectCareer } from '../../api/predictions'
 import { getProfile } from '../../Data/settingsStore'
@@ -349,6 +350,169 @@ const Card = ({ n, title, optional, children }) => (
 const inputCls =
   'w-full rounded-xl border border-[#e0d1ba] bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#0b0b2b] focus:ring-2 focus:ring-[#0b0b2b]/15'
 
+/* ------------------------------------------------------------------ */
+/* Loading animation: your career gets built, step by step             */
+/* Bars drop in one after another while the AI works. When the result  */
+/* is ready they lock in, a flag goes up, and then the modal opens.    */
+/* ------------------------------------------------------------------ */
+const reducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+const BUILD_LINES = [
+  'Reading your personality type...',
+  'Looking at your academic background...',
+  'Matching your skills to careers...',
+  'Comparing hundreds of career paths...',
+  'Ranking your top matches...',
+]
+const MIN_SHOW = 2800 // ms the animation stays up, even if the result arrives fast
+const FINISH_HOLD = 1200 // ms to enjoy the finished build before the modal opens
+
+const BAR_COLORS = ['#2f80e0', '#f2c230', '#e0404a', '#e8832a', '#6b7a99']
+const BAR_W = 34
+const BAR_GAP = 8
+const BAR_X0 = (240 - (BAR_COLORS.length * BAR_W + (BAR_COLORS.length - 1) * BAR_GAP)) / 2
+const BAR_BASE = 160
+const BAR_H = BAR_COLORS.map((_, i) => 30 + i * 24)
+
+const BuildingOverlay = ({ ready, onFinished }) => {
+  const rootRef = useRef(null)
+  const loopRef = useRef(null)
+  const startedAt = useRef(Date.now())
+  const finishedCb = useRef(onFinished)
+  finishedCb.current = onFinished
+
+  const [line, setLine] = useState(0)
+  const [finished, setFinished] = useState(false)
+
+  /* the looping build: bars drop in one by one, then lift away and start again */
+  useEffect(() => {
+    if (reducedMotion() || !rootRef.current) return undefined
+    const bars = rootRef.current.querySelectorAll('.bar')
+    loopRef.current = animate(bars, {
+      translateY: [-150, 0],
+      opacity: [0, 1],
+      duration: 650,
+      delay: stagger(240),
+      ease: 'outBounce',
+      loop: true,
+      alternate: true,
+      loopDelay: 500,
+    })
+    return () => loopRef.current?.pause()
+  }, [])
+
+  /* rotating status text, stops once the result is ready */
+  useEffect(() => {
+    if (ready) return undefined
+    const id = setInterval(() => setLine((n) => (n + 1) % BUILD_LINES.length), 2200)
+    return () => clearInterval(id)
+  }, [ready])
+
+  /* the result is in: wait out the minimum time, lock the build in, raise the flag, then hand over */
+  useEffect(() => {
+    if (!ready) return undefined
+    const wait = Math.max(0, MIN_SHOW - (Date.now() - startedAt.current))
+    let t2 = 0
+
+    const t1 = setTimeout(() => {
+      setFinished(true)
+      loopRef.current?.pause()
+
+      if (rootRef.current && !reducedMotion()) {
+        const bars = rootRef.current.querySelectorAll('.bar')
+        const flag = rootRef.current.querySelector('.flag')
+        animate(bars, { translateY: 0, opacity: 1, duration: 300, ease: 'outQuad' })
+        animate(bars, { scale: [1, 1.1, 1], duration: 450, delay: stagger(70, { start: 250 }), ease: 'outQuad' })
+        if (flag) animate(flag, { scale: [0, 1], opacity: [0, 1], duration: 600, delay: 650, ease: 'outBack' })
+      } else if (rootRef.current) {
+        const flag = rootRef.current.querySelector('.flag')
+        if (flag) flag.style.opacity = '1'
+      }
+
+      t2 = setTimeout(() => finishedCb.current?.(), FINISH_HOLD + 650)
+    }, wait)
+
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
+  }, [ready])
+
+  const last = BAR_COLORS.length - 1
+  const flagX = BAR_X0 + last * (BAR_W + BAR_GAP) + BAR_W / 2
+  const flagY = BAR_BASE - BAR_H[last]
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#f3e7d6]/95 px-4 backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="w-full max-w-sm text-center">
+        <svg
+          ref={rootRef}
+          viewBox="0 0 240 190"
+          className="mx-auto block h-auto w-full max-w-[300px]"
+          aria-hidden="true"
+        >
+          {/* ground */}
+          <rect x="8" y={BAR_BASE} width="224" height="6" rx="3" fill="#d9c8ae" />
+
+          {/* the bars that get built */}
+          {BAR_COLORS.map((color, i) => (
+            <g
+              key={color}
+              className="bar"
+              style={{ opacity: reducedMotion() ? 1 : 0, transformBox: 'fill-box', transformOrigin: '50% 100%' }}
+            >
+              <rect
+                x={BAR_X0 + i * (BAR_W + BAR_GAP)}
+                y={BAR_BASE - BAR_H[i]}
+                width={BAR_W}
+                height={BAR_H[i]}
+                rx="6"
+                fill={color}
+              />
+              <rect
+                x={BAR_X0 + i * (BAR_W + BAR_GAP) + 5}
+                y={BAR_BASE - BAR_H[i] + 5}
+                width={BAR_W - 10}
+                height="6"
+                rx="3"
+                fill="#fff"
+                opacity="0.35"
+              />
+            </g>
+          ))}
+
+          {/* flag on the tallest bar, raised when the result is ready */}
+          <g
+            className="flag"
+            style={{ opacity: 0, transformBox: 'fill-box', transformOrigin: '0% 100%' }}
+            transform={`translate(${flagX} ${flagY})`}
+          >
+            <rect x="-1.5" y="-30" width="3" height="30" rx="1.5" fill="#0b0b2b" />
+            <polygon points="1.5,-30 24,-23 1.5,-16" fill="#2f9e62" />
+          </g>
+        </svg>
+
+        <div className="mt-6 text-xl font-black tracking-tight text-black">
+          {finished ? 'Your matches are ready!' : 'Building your career matches'}
+        </div>
+        <div className="mt-2 min-h-[20px] text-sm text-neutral-600">
+          {finished ? 'Opening your results...' : BUILD_LINES[line]}
+        </div>
+        {!finished && (
+          <div className="mt-1 text-xs text-neutral-500">
+            This can take up to a minute the first time. Please keep this page open.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const AssesmentTest = () => {
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
@@ -356,10 +520,12 @@ const AssesmentTest = () => {
 
   /* the saved prediction + the inputs that produced it; when set, the result modal opens */
   const [result, setResult] = useState(null)
+  /* the prediction is loaded but the build animation is still finishing; the modal opens after it */
+  const [pending, setPending] = useState(null)
   const [selecting, setSelecting] = useState(false)
   const [selectError, setSelectError] = useState('')
 
-  /* pre-filled from Settings > Assessment defaults */
+  /* pre-filled from the saved profile, if there is one */
   const [mbti, setMbti] = useState(() => getProfile().mbti)
   const [degree, setDegree] = useState(() => getProfile().degree)
   const [skills, setSkills] = useState([])
@@ -428,15 +594,14 @@ const AssesmentTest = () => {
         preference: pref.trim(),
       })
 
-      /* load the saved prediction and show it in the modal */
+      /* load the saved prediction; the build animation finishes first, then the modal opens */
       try {
         const pred = await getPrediction(id)
         setSelectError('')
-        setResult({
+        setPending({
           pred: { ...pred, id: pred?.id ?? id },
           input: { mbti, degree: degree.trim(), skills: allSkills },
         })
-        setSubmitting(false)
       } catch {
         // the prediction is saved, so the dashboard can still show it
         navigate('/dashboard')
@@ -445,6 +610,13 @@ const AssesmentTest = () => {
       setSubmitError(err.message || 'Something went wrong. Please try again.')
       setSubmitting(false)
     }
+  }
+
+  /* called by the animation once the finished build has been shown: now open the result modal */
+  const showResult = () => {
+    setResult(pending)
+    setPending(null)
+    setSubmitting(false)
   }
 
   /* choose a career in the modal: save it, then open its roadmap */
@@ -752,7 +924,10 @@ const AssesmentTest = () => {
         </div>
       </form>
 
-      {/* result modal: opens once the prediction is ready */}
+      {/* build animation: shows while the AI works, finishes when the prediction is ready, then the modal opens */}
+      {(submitting || pending) && <BuildingOverlay ready={!!pending} onFinished={showResult} />}
+
+      {/* result modal: opens once the build animation has finished */}
       {result && (
         <PredictionModal
           pred={result.pred}
