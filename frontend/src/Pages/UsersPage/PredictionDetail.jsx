@@ -37,6 +37,12 @@ const Label = ({ children, className = 'text-neutral-500' }) => (
   <div className={`text-xs font-bold uppercase tracking-wide ${className}`}>{children}</div>
 )
 
+const SKILL_TABS = [
+  ['technical', 'Technical'],
+  ['other', 'Other'],
+  ['soft', 'Soft'],
+]
+
 const Chips = ({ items, className = '' }) => (
   <ul className="mt-2 flex flex-wrap gap-2">
     {items.map((s, i) => (
@@ -129,11 +135,17 @@ const ChoiceCard = ({ selected, saving, onGo }) => (
 
 /* ---------- right column: folder tabs + career details ---------- */
 const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
+  const [skillTab, setSkillTab] = useState('technical')
   const c = recs[focus] ?? recs[0]
   const reasons = reasonsOf(c)
   const fallback = whyText(c)
-  const have = list(c?.skillsHave)
-  const need = list(c?.skillsToBuild)
+  const groups = c?.skills
+  const tabs = groups
+    ? SKILL_TABS.filter(([key]) => list(groups[key]?.have).length + list(groups[key]?.need).length > 0)
+    : []
+  const activeSkillTab = tabs.find(([key]) => key === skillTab)?.[0] ?? tabs[0]?.[0]
+  const have = tabs.length ? list(groups[activeSkillTab]?.have) : list(c?.skillsHave)
+  const need = tabs.length ? list(groups[activeSkillTab]?.need) : list(c?.skillsToBuild)
   const isSel = selected === c.title
 
   return (
@@ -212,6 +224,32 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
             </div>
           )}
         </div>
+
+        {tabs.length > 1 && (
+          <div className="mt-6 flex flex-wrap items-center gap-2" role="tablist" aria-label="Skill type">
+            {tabs.map(([key, label]) => {
+              const g = groups[key]
+              const total = list(g.have).length + list(g.need).length
+              const on = key === activeSkillTab
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setSkillTab(key)}
+                  className={`rounded-full border px-4 py-1.5 text-xs font-bold transition ${
+                    on
+                      ? 'border-[#0b0b2b] bg-[#0b0b2b] text-white'
+                      : 'border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
+                  }`}
+                >
+                  {label} <span className="opacity-70">{list(g.have).length}/{total}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {have.length + need.length > 0 && (
           <div className="mt-6">

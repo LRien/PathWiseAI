@@ -7,6 +7,7 @@ import { supabase } from './src/config/supabase.js'
 import authRoutes from './src/routes/auth.js'
 import assessmentRoutes from './src/routes/assessments.js'
 import predictionRoutes from './src/routes/predictions.js'
+import contactRoutes from './src/routes/contact.js'
 
 if (!process.env.JWT_SECRET) {
   console.error('Missing JWT_SECRET in environment variables')
@@ -14,6 +15,10 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express()
+
+// Behind a host proxy (Render/Railway/etc.) so req.ip is the real visitor IP,
+// which the contact rate limiter relies on
+app.set('trust proxy', 1)
 
 /* ---------- CORS ----------
    CLIENT_URL can hold ONE or MANY origins, separated by commas.
@@ -55,7 +60,7 @@ app.use(
   })
 )
 
-app.use(express.json())
+app.use(express.json({ limit: '50kb' }))
 
 /* ---------- Root: shows the backend is alive ---------- */
 app.get('/', (_req, res) => {
@@ -84,6 +89,7 @@ app.get('/api/health', async (_req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/assessments', assessmentRoutes)
 app.use('/api/predictions', predictionRoutes)
+app.use('/api/contact', contactRoutes)
 
 /* ---------- 404 for unknown routes ---------- */
 app.use((req, res) => {

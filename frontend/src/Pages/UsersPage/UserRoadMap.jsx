@@ -1,11 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { animate, stagger } from 'animejs'
-import { FaCheckCircle, FaFlagCheckered, FaPlay } from 'react-icons/fa'
+import { FaCheckCircle, FaFlagCheckered, FaPlay, FaStar, FaYoutube } from 'react-icons/fa'
+import { SiCoursera, SiUdemy } from 'react-icons/si'
 import { getLatestPrediction, getPrediction, getRoadmap, listPredictions } from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
 
+/* ------------------------------------------------------------------ */
+/* UserRoadMap                                                         */
+/*                                                                     */
+/* The map is a little isometric "island" (a floating slab of land)    */
+/* with a road winding across it, a river with a bridge and a          */
+/* waterfall, buildings, trees, clouds and a plane.                    */
+/*                                                                     */
+/*   - mobile / tablet (under 1024px): the road winds DOWN the island   */
+/*   - desktop (1024px and up): the road runs ACROSS the island, which  */
+/*     scrolls sideways when it is long                                 */
+/*                                                                     */
+/* Required steps sit on the MAIN road. Optional steps (see isOptional)*/
+/* never block the goal: each one hangs on a purple dashed SIDE PATH   */
+/* that branches off the last main step before it.                     */
+/*                                                                     */
+/* Your MBTI character walks the map (and detours onto side paths).    */
+/* The cheering character + speech bubble floats above the focus card  */
+/* on every screen size, desktop included.                             */
+/* ------------------------------------------------------------------ */
+
 const BACK = '/dashboard'
+const SIDE = '#8b5cf6' // side path (optional steps)
+const HIDDEN = { opacity: 0 } // animated in by anime.js
+const CONFETTI = ['#2f80e0', '#f2c230', '#e0404a', '#2f9e62', '#0b0b2b', '#8b5cf6']
 
 const readSaved = () => {
   try {
@@ -27,6 +51,121 @@ const detail = (x) => {
   return typeof d === 'string' && d !== text(x) ? d : ''
 }
 
+/* A step is optional when the API says so (optional / isOptional / required:false / type:'optional')
+   or when its title is tagged, e.g. "Optional: Learn Docker" or "Learn Docker (optional)". */
+const OPT_TAG = /^\s*optional\b\s*[:\-–]?\s*|\s*[([]\s*optional\s*[)\]]/i
+const isOptional = (x) => {
+  if (x && typeof x === 'object') {
+    if (x.optional === true || x.isOptional === true || x.required === false) return true
+    const k = String(x.type ?? x.kind ?? x.category ?? '').toLowerCase()
+    if (k === 'optional') return true
+  }
+  return OPT_TAG.test(text(x))
+}
+// title without the "(optional)" tag, since the side path already says it
+const title = (x) => {
+  const t = text(x)
+  const c = t.replace(OPT_TAG, ' ').trim() || t
+  return c.charAt(0).toUpperCase() + c.slice(1)
+}
+
+/* ------------------------------------------------------------------ */
+/* Logical order                                                       */
+/* The API doesn't always return steps in the order you would really   */
+/* do them (e.g. "degree, skills, internship, job search" even though  */
+/* the skills are built DURING school). So we read each step's timing  */
+/* text ("years 1-4", "last 6-12 months of school", "0-6 months after  */
+/* graduating"...) plus a few keywords, and sort into a real timeline: */
+/*   school + the skills built alongside it -> internship ->           */
+/*   graduation -> job search.                                         */
+/* Steps that run at the same time get an "alongside step N" note.     */
+/* If a roadmap has no readable timing, its order is left untouched.   */
+/* ------------------------------------------------------------------ */
+const NUM = '(\\d+(?:\\.\\d+)?)'
+const RNG = `${NUM}(?:\\s*(?:-|–|to)\\s*${NUM})?`
+const unitMonths = (u) => (/^y/i.test(u) ? 12 : /^w/i.test(u) ? 0.25 : 1)
+
+const readTiming = (raw) => {
+  const t = String(raw || '')
+    .toLowerCase()
+    .replace(/[~≈]|\b(about|around|roughly|approximately)\b/g, ' ')
+  let m = t.match(new RegExp(`${RNG}\\s*(months?|years?|weeks?)\\s*(?:after|post-?|following)`))
+  if (m) {
+    const u = unitMonths(m[3])
+    return { kind: 'after', a: Number(m[1]) * u, b: Number(m[2] ?? m[1]) * u }
+  }
+  m = t.match(new RegExp(`last\\s+${RNG}\\s*(months?|years?|weeks?)`))
+  if (m) return { kind: 'last', len: Math.max(Number(m[1]), Number(m[2] ?? m[1])) * unitMonths(m[3]) }
+  m = t.match(/\b(?:years?|yrs?)\s*(\d+)(?:\s*(?:-|–|to)\s*(\d+))?/)
+  if (m) return { kind: 'span', start: (Number(m[1]) - 1) * 12, end: Number(m[2] ?? m[1]) * 12 }
+  m = t.match(new RegExp(`${RNG}\\s*(months?|years?|weeks?)`))
+  if (m) return { kind: 'dur', months: Math.max(Number(m[1]), Number(m[2] ?? m[1])) * unitMonths(m[3]) }
+  return null
+}
+
+const isEdu = (t) =>
+  /\b(degree|bachelor['’]?s?|master['’]?s|associate['’]?s?|diploma|undergraduate|postgraduate|college|university)\b/i.test(t) &&
+  !/\b(skills?|projects?|intern\w*|certif\w*)\b/i.test(t)
+const isIntern = (t) => /\b(intern(ship)?s?|apprentice(ship)?|co-?op|practicum|placement|residency|externship|fieldwork)\b/i.test(t)
+const isJob = (t) =>
+  !isIntern(t) && /\b(jobs?|apply(ing)?|applications?|interviews?|resume|hiring|employment|first role|entry-level)\b/i.test(t)
+
+const arrangeSteps = (raw) => {
+  const items = raw.map((s, idx) => {
+    const t = title(s)
+    return { s, key: String(idx), t, tm: readTiming(sub(s)), edu: isEdu(t), intern: isIntern(t), job: isJob(t), win: null }
+  })
+  if (!items.length) return []
+
+  // how long school lasts (months), only when the roadmap includes a degree step
+  const eduItem = items.find((x) => x.edu)
+  let gradEnd = null
+  if (eduItem) {
+    const tm = eduItem.tm
+    gradEnd = tm?.kind === 'dur' ? tm.months : tm?.kind === 'span' ? tm.end : 48
+  }
+
+  // give every step a time window (months from the start of the journey)
+  let prev = null
+  let prevKey = 0
+  items.forEach((x) => {
+    const tm = x.tm
+    let win = null
+    if (tm?.kind === 'span') win = { start: tm.start, end: tm.end }
+    else if (tm?.kind === 'last' && gradEnd != null) win = { start: Math.max(0, gradEnd - tm.len), end: gradEnd }
+    else if (tm?.kind === 'after' && gradEnd != null) win = { start: gradEnd + tm.a, end: gradEnd + tm.b }
+    else if (x.edu && gradEnd != null) win = { start: 0, end: gradEnd }
+    else if (x.intern && gradEnd != null) win = { start: Math.max(0, gradEnd - 12), end: gradEnd }
+    else if (x.job && gradEnd != null) win = { start: gradEnd, end: gradEnd + 6 }
+    if (win) x.win = win
+    else {
+      x.win = prev ? { start: prev.start, end: prev.end } : { start: 0, end: 0 } // unknown: stay right after the previous step
+      x.guess = true
+    }
+    // "Complete the degree" means graduating, so it sorts at the END of school (after the skills and internship done during it)
+    x.sortKey = x.edu && gradEnd != null ? gradEnd - 0.01 : x.guess ? prevKey : x.win.start
+    prev = x.win
+    prevKey = x.sortKey
+  })
+
+  const rank = (x) => (x.edu ? 1 : 0)
+  const phaseOf = (x) =>
+    gradEnd == null || x.guess
+      ? ''
+      : x.edu
+        ? 'Graduation'
+        : x.win.start >= gradEnd
+          ? 'After graduating'
+          : x.win.start >= gradEnd - 12 && x.win.end <= gradEnd
+            ? 'Final year'
+            : 'During school'
+
+  return items
+    .map((x, idx) => ({ x, idx }))
+    .sort((a, b) => a.x.sortKey - b.x.sortKey || rank(a.x) - rank(b.x) || a.x.win.end - b.x.win.end || a.idx - b.idx)
+    .map(({ x }) => ({ ...x, phase: phaseOf(x) }))
+}
+
 const reducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
@@ -41,74 +180,355 @@ const scrollParent = (node) => {
   return document.scrollingElement || document.documentElement
 }
 
+/* ------------------------------------------------------------------ */
+/* Celebration effects: confetti, stars, rings and a floating word      */
+/* They are plain DOM pieces added to the map's overlay, animated with  */
+/* the Web Animations API, and removed again when they finish.          */
+/* ------------------------------------------------------------------ */
+const FX_WORDS = ['Nice!', 'Step done!', 'Awesome!', 'Great job!', 'On a roll!']
+const rnd = (a, b) => a + Math.random() * (b - a)
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
+
+const fxAdd = (root, left, top, css) => {
+  const el = document.createElement('div')
+  el.setAttribute('aria-hidden', 'true')
+  el.style.cssText = `position:absolute;left:${left};top:${top};pointer-events:none;${css}`
+  root.appendChild(el)
+  return el
+}
+
+const fxRun = (el, frames, opts) => {
+  const a = el.animate(frames, { fill: 'both', ...opts })
+  a.onfinish = () => el.remove()
+  return a
+}
+
+/* confetti, stars, two rings and a floating word, all flying out of one point */
+const popAt = (root, left, top, { count = 46, spread = 150, ring = '#2f80e0', word = '', colors = CONFETTI } = {}) => {
+  for (let k = 0; k < count; k++) {
+    const w = rnd(5, 10)
+    const h = Math.random() < 0.4 ? w : rnd(9, 17)
+    const el = fxAdd(
+      root,
+      left,
+      top,
+      `z-index:41;width:${w}px;height:${h}px;margin:${-h / 2}px 0 0 ${-w / 2}px;background:${pick(colors)};border-radius:${Math.random() < 0.3 ? '50%' : '2px'};`
+    )
+    const a = rnd(-Math.PI * 0.98, -Math.PI * 0.02) // fans out upwards
+    const dist = rnd(spread * 0.35, spread)
+    const dx = Math.cos(a) * dist
+    const dy = Math.sin(a) * dist
+    const rot = rnd(-540, 540)
+    fxRun(
+      el,
+      [
+        { transform: 'translate(0px,0px) rotate(0deg) scale(.3)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) rotate(${rot * 0.5}deg) scale(1)`, opacity: 1, offset: 0.45 },
+        { transform: `translate(${dx * 1.12}px,${dy + rnd(50, 120)}px) rotate(${rot}deg) scale(.8)`, opacity: 0 },
+      ],
+      { duration: rnd(1100, 1800), delay: rnd(0, 140), easing: 'cubic-bezier(.2,.7,.3,1)' }
+    )
+  }
+
+  for (let k = 0; k < 8; k++) {
+    const fs = rnd(14, 24)
+    const el = fxAdd(
+      root,
+      left,
+      top,
+      `z-index:42;font-size:${fs}px;line-height:1;color:${pick(['#f5c518', '#f2c230', '#fff'])};margin:${-fs / 2}px 0 0 ${-fs / 2}px;text-shadow:0 1px 2px rgba(0,0,0,.3);`
+    )
+    el.textContent = '★'
+    const a = (k / 8) * Math.PI * 2 + rnd(-0.2, 0.2)
+    const dist = rnd(spread * 0.3, spread * 0.7)
+    fxRun(
+      el,
+      [
+        { transform: 'translate(0px,0px) scale(.2) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${Math.cos(a) * dist}px,${Math.sin(a) * dist}px) scale(1.2) rotate(120deg)`, opacity: 1, offset: 0.5 },
+        { transform: `translate(${Math.cos(a) * dist * 1.2}px,${Math.sin(a) * dist * 1.2}px) scale(.3) rotate(260deg)`, opacity: 0 },
+      ],
+      { duration: rnd(800, 1200), delay: rnd(0, 120), easing: 'ease-out' }
+    )
+  }
+
+  ;[0, 200].forEach((d) => {
+    const r = fxAdd(root, left, top, `z-index:40;width:24px;height:24px;margin:-12px 0 0 -12px;border:3px solid ${ring};border-radius:50%;`)
+    fxRun(r, [{ transform: 'scale(.3)', opacity: 0.9 }, { transform: 'scale(4.5)', opacity: 0 }], { duration: 900, delay: d, easing: 'ease-out' })
+  })
+
+  if (word) {
+    const p = fxAdd(
+      root,
+      left,
+      top,
+      `z-index:43;padding:3px 10px;border-radius:999px;background:${ring};color:#fff;font:800 12px/1.3 system-ui,sans-serif;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.25);margin-top:-34px;`
+    )
+    p.textContent = word
+    fxRun(
+      p,
+      [
+        { transform: 'translate(-50%,6px) scale(.5)', opacity: 0 },
+        { transform: 'translate(-50%,-22px) scale(1.1)', opacity: 1, offset: 0.25 },
+        { transform: 'translate(-50%,-54px) scale(1)', opacity: 1, offset: 0.7 },
+        { transform: 'translate(-50%,-76px) scale(1)', opacity: 0 },
+      ],
+      { duration: 1500, easing: 'ease-out' }
+    )
+  }
+}
+
+/* confetti falling over the whole map (used when the goal is reached) */
+const rainDown = (root, count = 100) => {
+  const H = root.clientHeight || 400
+  for (let k = 0; k < count; k++) {
+    const w = rnd(5, 9)
+    const h = rnd(8, 15)
+    const el = fxAdd(
+      root,
+      `${rnd(1, 99)}%`,
+      '0px',
+      `z-index:41;width:${w}px;height:${h}px;margin:${-h - 10}px 0 0 ${-w / 2}px;background:${pick(CONFETTI)};border-radius:2px;`
+    )
+    const sway = rnd(-70, 70)
+    fxRun(
+      el,
+      [
+        { transform: 'translate(0px,0px) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${sway * 0.5}px,${H * 0.5}px) rotate(${rnd(200, 400)}deg)`, opacity: 1, offset: 0.6 },
+        { transform: `translate(${sway}px,${H + 30}px) rotate(${rnd(500, 900)}deg)`, opacity: 0.9 },
+      ],
+      { duration: rnd(1800, 3000), delay: rnd(0, 1200), easing: 'ease-in' }
+    )
+  }
+}
+
 /* NOTE: text uses <div>/<span> with explicit sizes, because the global p { font-size: var(--text-body) } rule overrides Tailwind sizes */
 
 /* ------------------------------------------------------------------ */
 /* Map geometry                                                        */
-/* The route is a winding S-curve. Everything (path, nodes, character)  */
-/* is positioned from the same numbers, so they always line up.         */
+/* The route is laid out on a flat "logical" plane (x, y), exactly as  */
+/* before. Then every point is run through proj(), which tilts the     */
+/* plane into an isometric-style island (a slab with visible sides).   */
+/* Paths, stops, the character and the scenery all use the same        */
+/* projection, so they always line up.                                 */
+/*   k  = how far the back of the island leans to the right             */
+/*   c  = how much depth is squashed (smaller = flatter island)         */
+/*   ex, ey = how thick the island looks on its front / right sides     */
+/*   OX, OY = room for the sky (clouds, sun, plane) above the island    */
 /* ------------------------------------------------------------------ */
-const MAP_W = 400
-const ROW = 150 // vertical distance between stops
-const TOP = 118 // start point (leaves room for the character above it)
-const FIRST = 214 // first stop
-const LEFT_X = 92
-const RIGHT_X = 308
+const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110 }
 
-const buildMap = (count) => {
-  const nodes = Array.from({ length: count }, (_, i) => ({
-    x: i % 2 === 0 ? LEFT_X : RIGHT_X,
-    y: FIRST + i * ROW,
-  }))
-  const start = { x: MAP_W / 2, y: TOP }
-  const end = { x: MAP_W / 2, y: nodes[count - 1].y + 125 }
-  const H = end.y + 115
-  const pts = [start, ...nodes, end]
+const ISO = {
+  port: { k: 0.07, c: 0.92, OX: 22, OY: 100, ex: 14, ey: 30, padR: 26, padB: 40 },
+  land: { k: 0.3, c: 0.6, OX: 34, OY: 96, ex: 8, ey: 40, padR: 30, padB: 40 },
+}
 
-  let d = `M ${start.x} ${start.y}`
-  const samples = [{ x: start.x, y: start.y, len: 0 }]
-  const nodeLen = []
+const rd = (n) => Math.round(n * 10) / 10
+
+const vertical = (a, b) => {
+  const dy = b.y - a.y
+  return [
+    { x: a.x, y: a.y + dy * 0.5 },
+    { x: b.x, y: b.y - dy * 0.5 },
+  ]
+}
+const horizontal = (a, b) => {
+  const dx = b.x - a.x
+  return [
+    { x: a.x + dx * 0.5, y: a.y },
+    { x: b.x - dx * 0.5, y: b.y },
+  ]
+}
+
+/* smooth cubic route through pts (logical), drawn in projected space,
+   with length samples so we can walk along it. Each sample keeps both its
+   screen position (x, y) and its logical position (lx, ly). */
+const trace = (pts, ctrl, proj) => {
+  const p0 = proj(pts[0])
+  let d = `M ${rd(p0.x)} ${rd(p0.y)}`
+  const samples = [{ x: p0.x, y: p0.y, lx: pts[0].x, ly: pts[0].y, len: 0 }]
+  const cum = [0]
   let total = 0
-
+  let prev = p0
   for (let j = 0; j < pts.length - 1; j++) {
     const a = pts[j]
     const b = pts[j + 1]
-    const dy = b.y - a.y
-    const c1 = { x: a.x, y: a.y + dy * 0.5 }
-    const c2 = { x: b.x, y: b.y - dy * 0.5 }
-    d += ` C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`
-
-    let prev = a
+    const [c1, c2] = ctrl(a, b, j)
+    const q1 = proj(c1)
+    const q2 = proj(c2)
+    const qb = proj(b)
+    d += ` C ${rd(q1.x)} ${rd(q1.y)} ${rd(q2.x)} ${rd(q2.y)} ${rd(qb.x)} ${rd(qb.y)}`
     const STEPS = 24
     for (let s = 1; s <= STEPS; s++) {
       const t = s / STEPS
       const m = 1 - t
-      const x = m * m * m * a.x + 3 * m * m * t * c1.x + 3 * m * t * t * c2.x + t * t * t * b.x
-      const y = m * m * m * a.y + 3 * m * m * t * c1.y + 3 * m * t * t * c2.y + t * t * t * b.y
-      total += Math.hypot(x - prev.x, y - prev.y)
-      samples.push({ x, y, len: total })
-      prev = { x, y }
+      const lx = m * m * m * a.x + 3 * m * m * t * c1.x + 3 * m * t * t * c2.x + t * t * t * b.x
+      const ly = m * m * m * a.y + 3 * m * m * t * c1.y + 3 * m * t * t * c2.y + t * t * t * b.y
+      const q = proj({ x: lx, y: ly })
+      total += Math.hypot(q.x - prev.x, q.y - prev.y)
+      samples.push({ x: q.x, y: q.y, lx, ly, len: total })
+      prev = q
     }
-    if (j < count) nodeLen[j] = total // segment j ends at stop j
+    cum.push(total)
+  }
+  return { d, samples, total, fracs: cum.map((l) => l / (total || 1)) }
+}
+
+/* counts[m] = how many optional steps hang off main step m */
+const buildMap = (counts, mode) => {
+  const n = counts.length
+  const maxK = Math.max(0, ...counts)
+  const cfg = ISO[mode]
+  let start, end, nodes, LW, LH, sideAt, ROAD_Y
+
+  if (mode === 'port') {
+    let y = P.FIRST
+    nodes = counts.map((k, i) => {
+      const nd = { x: i % 2 === 0 ? P.LEFT : P.RIGHT, y }
+      y += k ? P.SIDE0 + (k - 1) * P.SIDE + 105 : P.ROW // leave room for the side path
+      return nd
+    })
+    const lastK = counts[n - 1]
+    start = { x: P.W / 2, y: P.TOP }
+    end = { x: P.W / 2, y: nodes[n - 1].y + (lastK ? P.SIDE0 + (lastK - 1) * P.SIDE + 110 : 125) }
+    LW = P.W
+    LH = end.y + 115
+    sideAt = (nd, j, m) => ({ x: m % 2 === 0 ? 70 : 330, y: nd.y + P.SIDE0 + j * P.SIDE })
+  } else {
+    const gap = Math.max(210, Math.floor(620 / n))
+    ROAD_Y = maxK ? 290 + (maxK - 1) * 100 : 240 // headroom for side paths and the character
+    const ZIG = 90 // how far the road swings up and down: every other stop is high, then low
+    nodes = counts.map((_, i) => ({
+      x: 190 + i * gap,
+      y: ROAD_Y + (i % 2 === 0 ? -ZIG : ZIG),
+    }))
+    start = { x: 70, y: ROAD_Y }
+    end = { x: nodes[n - 1].x + 150, y: ROAD_Y }
+    LW = end.x + 110
+    LH = ROAD_Y + 230
+    sideAt = (nd, j) => ({ x: nd.x + (j % 2 === 0 ? 20 : -6), y: nd.y - 105 - j * 100 })
+  }
+
+  const proj = (p) => ({ x: cfg.OX + p.x + (LH - p.y) * cfg.k, y: cfg.OY + p.y * cfg.c })
+  const W = Math.ceil(cfg.OX + LW + LH * cfg.k + cfg.ex + cfg.padR)
+  const H = Math.ceil(cfg.OY + LH * cfg.c + cfg.ey + cfg.padB)
+
+  const chain = [start, ...nodes, end]
+  const main = trace(chain, mode === 'port' ? vertical : horizontal, proj)
+
+  const branches = {}
+  counts.forEach((k, m) => {
+    if (!k) return
+    const pts = [nodes[m], ...Array.from({ length: k }, (_, j) => sideAt(nodes[m], j, m))]
+    const out = mode === 'port' ? (m % 2 === 0 ? -1 : 1) : 0
+    const t = trace(
+      pts,
+      (a, b, j) =>
+        j === 0 && out
+          ? [
+              { x: a.x + out * 50, y: a.y + 25 },
+              { x: b.x, y: b.y - 45 },
+            ]
+          : vertical(a, b),
+      proj
+    )
+    branches[m] = { ...t, nodes: pts.slice(1).map(proj), lnodes: pts.slice(1) }
+  })
+
+  /* the river: runs between two stops, crosses the road under a bridge and
+     drops off the edge of the island as a waterfall */
+  const rm = Math.floor((chain.length - 2) / 2)
+  let rpts
+  if (mode === 'land') {
+    const rx = (chain[rm].x + chain[rm + 1].x) / 2
+    rpts = [
+      { x: rx - 24, y: -18 },
+      { x: rx + 22, y: LH * 0.3 },
+      { x: rx - 16, y: LH * 0.62 },
+      { x: rx + 14, y: LH + 14 },
+    ]
+  } else {
+    const ry = chain[rm + 1].y - 40
+    rpts = [
+      { x: -18, y: ry - 30 },
+      { x: LW * 0.36, y: ry + 16 },
+      { x: LW * 0.68, y: ry - 14 },
+      { x: LW + 14, y: ry + 24 },
+    ]
+  }
+  const river = trace(rpts, mode === 'land' ? vertical : horizontal, proj)
+
+  /* where the main road meets the river: that stretch becomes a bridge */
+  let best = 1
+  let bestD = Infinity
+  main.samples.forEach((s, idx) => {
+    let m = Infinity
+    river.samples.forEach((r) => {
+      const dd = Math.hypot(s.lx - r.lx, s.ly - r.ly)
+      if (dd < m) m = dd
+    })
+    if (m < bestD) {
+      bestD = m
+      best = idx
+    }
+  })
+  const b0 = Math.max(0, best - 5)
+  const b1 = Math.min(main.samples.length - 1, best + 5)
+  const bridge = main.samples
+    .slice(b0, b1 + 1)
+    .map((s, i) => `${i ? 'L' : 'M'} ${rd(s.x)} ${rd(s.y)}`)
+    .join(' ')
+
+  /* waterfall: where the river leaves the island */
+  let fall
+  if (mode === 'land') {
+    const s = river.samples.reduce((a, b) => (Math.abs(b.ly - LH) < Math.abs(a.ly - LH) ? b : a))
+    fall = { E: proj({ x: s.lx, y: LH }), d: { x: 1, y: 0 } }
+  } else {
+    const s = river.samples.reduce((a, b) => (Math.abs(b.lx - LW) < Math.abs(a.lx - LW) ? b : a))
+    const a = proj({ x: LW, y: 0 })
+    const b = proj({ x: LW, y: LH })
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1
+    fall = { E: proj({ x: LW, y: s.ly }), d: { x: (b.x - a.x) / L, y: (b.y - a.y) / L } }
   }
 
   return {
-    W: MAP_W,
+    mode,
+    W,
     H,
-    d,
-    start,
-    end,
-    nodes,
-    samples,
-    total,
-    nodeFrac: nodeLen.map((l) => l / total),
+    LW,
+    LH,
+    ROAD_Y,
+    proj,
+    d: main.d,
+    samples: main.samples,
+    total: main.total,
+    start: proj(start),
+    end: proj(end),
+    lstart: start,
+    lend: end,
+    nodes: nodes.map(proj),
+    lnodes: nodes,
+    nodeFrac: main.fracs.slice(1, -1),
+    branches,
+    river,
+    bridge,
+    fall,
+    slab: {
+      tl: proj({ x: 0, y: 0 }),
+      tr: proj({ x: LW, y: 0 }),
+      br: proj({ x: LW, y: LH }),
+      bl: proj({ x: 0, y: LH }),
+    },
+    ext: { x: cfg.ex, y: cfg.ey },
   }
 }
 
-/* point on the route at fraction f (0 to 1) */
-const posAt = (geo, f) => {
-  const target = Math.max(0, Math.min(1, f)) * geo.total
-  const s = geo.samples
+/* point on a route (main or branch) at fraction f (0 to 1) */
+const posAt = (route, f) => {
+  const target = Math.max(0, Math.min(1, f)) * route.total
+  const s = route.samples
   let i = 1
   while (i < s.length - 1 && s[i].len < target) i++
   const a = s[i - 1]
@@ -121,7 +541,409 @@ const posAt = (geo, f) => {
 const pctX = (geo, x) => `${(x / geo.W) * 100}%`
 const pctY = (geo, y) => `${(y / geo.H) * 100}%`
 
-const HIDDEN = { opacity: 0 } // animated in by anime.js
+/* ------------------------------------------------------------------ */
+/* Scenery                                                             */
+/* Every piece has an outer <g> that places it and an inner <g> with    */
+/* class "pop-deco" that anime.js fades / drops in.                     */
+/* ------------------------------------------------------------------ */
+const TONES = [
+  { l: '#e4e9f3', r: '#bcc6dc', t: '#f6f8fc', w: '#7fb6e8', w2: '#9cc9f0' },
+  { l: '#f2e3d0', r: '#d6c0a2', t: '#fcf3e6', w: '#8fc0e4', w2: '#a9d2ee' },
+  { l: '#d4e6f6', r: '#a9c6e2', t: '#e9f3fb', w: '#6aa9e0', w2: '#8ec0ec' },
+]
+
+/* an isometric office block: two shaded faces, a roof and rows of windows */
+const Building = ({ h, tone }) => {
+  const c = TONES[Math.abs(tone) % 3]
+  const rows = Math.max(1, Math.floor((h - 16) / 13))
+  const win = []
+  for (let r = 0; r < rows; r++) for (let k = 0; k < 2; k++) win.push([3 + k * 7.5, -h + 7 + r * 13])
+  return (
+    <>
+      <ellipse cx="0" cy="-8" rx="28" ry="12" fill="#1b3a14" opacity=".16" />
+      <polygon points={`-18,-9 0,0 0,${-h} -18,${-9 - h}`} fill={c.l} />
+      <polygon points={`0,0 18,-9 18,${-9 - h} 0,${-h}`} fill={c.r} />
+      <polygon points={`0,${-h} 18,${-9 - h} 0,${-18 - h} -18,${-9 - h}`} fill={c.t} />
+      <g transform="translate(-18 -9) skewY(26.565)">
+        {win.map(([x, y], i) => (
+          <rect key={i} x={x} y={y} width="5" height="7" rx="1" fill={c.w} />
+        ))}
+      </g>
+      <g transform="skewY(-26.565)">
+        {win.map(([x, y], i) => (
+          <rect key={i} x={x} y={y} width="5" height="7" rx="1" fill={c.w2} />
+        ))}
+      </g>
+      {h > 80 && <line x1="0" y1={-9 - h} x2="0" y2={-21 - h} stroke="#8b95a5" strokeWidth="1.6" strokeLinecap="round" />}
+    </>
+  )
+}
+
+const IsoHouse = () => (
+  <>
+    <ellipse cx="0" cy="-7" rx="25" ry="10" fill="#1b3a14" opacity=".16" />
+    <polygon points="-16,-8 0,0 0,-16 -16,-24" fill="#f5e6d0" />
+    <polygon points="0,0 16,-8 16,-24 0,-16" fill="#d9c4a6" />
+    <polygon points="-20,-26 0,-14 0,-38" fill="#e0574a" />
+    <polygon points="0,-14 20,-26 0,-38" fill="#b8392f" />
+    <polygon points="-5,-2 -5,-11 -1,-9 -1,0" fill="#8a6a45" />
+    <rect x="5" y="-18" width="5" height="6" fill="#9fd0ee" transform="skewY(-26.565) translate(0 0)" />
+  </>
+)
+
+const LIFT = { tree: 22, pine: 22, bush: 22, flowers: 22 } // these are drawn around their centre, so lift them onto the ground
+
+const Deco = ({ type, x, y, h = 64, tone = 0 }) => (
+  <g transform={`translate(${rd(x)} ${rd(y - (LIFT[type] ?? 0))})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      {type === 'building' && <Building h={h} tone={tone} />}
+      {type === 'house' && <IsoHouse />}
+      {type === 'tree' && (
+        <>
+          <ellipse cx="0" cy="24" rx="19" ry="6" fill="#1b3a14" opacity=".18" />
+          <rect x="-3" y="6" width="6" height="18" rx="2" fill="#8a6a45" />
+          <circle cx="0" cy="-4" r="17" fill="#4f9f5a" />
+          <circle cx="-3" cy="-16" r="11" fill="#63b36a" />
+          <circle cx="6" cy="-10" r="5" fill="#7cc983" opacity=".7" />
+        </>
+      )}
+      {type === 'pine' && (
+        <>
+          <ellipse cx="0" cy="24" rx="17" ry="5.5" fill="#1b3a14" opacity=".18" />
+          <rect x="-2.5" y="12" width="5" height="12" rx="2" fill="#8a6a45" />
+          <polygon points="0,-30 -16,0 16,0" fill="#3f8f55" />
+          <polygon points="0,-18 -20,12 20,12" fill="#4fa564" />
+        </>
+      )}
+      {type === 'bush' && (
+        <>
+          <ellipse cx="0" cy="22" rx="26" ry="6" fill="#1b3a14" opacity=".16" />
+          <ellipse cx="0" cy="14" rx="26" ry="10" fill="#5fae6a" />
+          <ellipse cx="-12" cy="8" rx="13" ry="10" fill="#4f9f5a" />
+          <ellipse cx="12" cy="9" rx="12" ry="9" fill="#74c27d" />
+        </>
+      )}
+      {type === 'flowers' && (
+        <>
+          <ellipse cx="0" cy="18" rx="24" ry="7" fill="#74c27d" />
+          {[-14, -3, 9, 17].map((fx, k) => (
+            <g key={fx} transform={`translate(${fx} ${10 - (k % 2) * 6})`}>
+              <line x1="0" y1="0" x2="0" y2="10" stroke="#3f8f55" strokeWidth="2" />
+              <circle r="4.5" fill={['#e0404a', '#f2c230', '#8b5cf6', '#2f80e0'][k]} />
+              <circle r="1.7" fill="#fff9ea" />
+            </g>
+          ))}
+        </>
+      )}
+      {type === 'lake' && (
+        <>
+          <ellipse cx="0" cy="0" rx="54" ry="19" fill="#8ec9ea" stroke="#6fb6dc" strokeWidth="2.5" />
+          <ellipse cx="-8" cy="-3" rx="38" ry="11" fill="#b9e1f5" opacity=".8" />
+          <path d="M -30 -2 q 8 -5 16 0 M 0 5 q 8 -5 16 0 M 14 -6 q 8 -5 16 0" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+            <animate attributeName="opacity" values=".4;1;.4" dur="3s" repeatCount="indefinite" />
+          </path>
+        </>
+      )}
+    </g>
+  </g>
+)
+
+const Cloud = ({ x, y, s = 1, dur = 18, drift = 26, rm }) => (
+  <g transform={`translate(${rd(x)} ${rd(y)}) scale(${s})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      <g>
+        {!rm && (
+          <animateTransform attributeName="transform" type="translate" values={`0 0;${drift} 0;0 0`} dur={`${dur}s`} repeatCount="indefinite" />
+        )}
+        <ellipse cx="0" cy="0" rx="28" ry="11" fill="#fff" fillOpacity=".95" />
+        <ellipse cx="-15" cy="-6" rx="14" ry="10" fill="#fff" fillOpacity=".95" />
+        <ellipse cx="10" cy="-9" rx="17" ry="12" fill="#fff" fillOpacity=".95" />
+      </g>
+    </g>
+  </g>
+)
+
+const Birds = ({ x, y, dist, rm }) => (
+  <g transform={`translate(${rd(x)} ${rd(y)})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      <g>
+        {!rm && (
+          <animateTransform attributeName="transform" type="translate" values={`0 0;${dist} -10;0 0`} dur="40s" repeatCount="indefinite" />
+        )}
+        {[0, 22, 42].map((bx, k) => (
+          <path
+            key={bx}
+            d="M 0 0 q 5 -7 10 0 q 5 -7 10 0"
+            transform={`translate(${bx} ${k % 2 ? 8 : 0})`}
+            fill="none"
+            stroke="#5b6b86"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        ))}
+      </g>
+    </g>
+  </g>
+)
+
+const Sun = ({ x, y, rm }) => (
+  <g transform={`translate(${rd(x)} ${rd(y)})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      <g>
+        {!rm && <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="60s" repeatCount="indefinite" />}
+        {Array.from({ length: 12 }).map((_, k) => (
+          <line key={k} x1="0" y1="-26" x2="0" y2="-35" stroke="#f2c230" strokeWidth="3" strokeLinecap="round" transform={`rotate(${k * 30})`} />
+        ))}
+      </g>
+      <circle r="19" fill="#f7d56b" />
+      <circle r="19" fill="none" stroke="#f2c230" strokeWidth="2" />
+    </g>
+  </g>
+)
+
+/* a little plane that crosses the sky now and then */
+const Plane = ({ y, W, rm }) => (
+  <g transform={`translate(0 ${y})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      <g transform="translate(-80 0)">
+        {!rm && (
+          <animateTransform attributeName="transform" type="translate" values={`-80 0;${W + 80} -16`} dur="32s" repeatCount="indefinite" />
+        )}
+        <ellipse rx="20" ry="4.5" fill="#f4f6fa" stroke="#c9d1e0" strokeWidth="1" />
+        <polygon points="-4,0 -12,-13 -6,-13 8,0" fill="#dfe4ee" />
+        <polygon points="-18,-1 -24,-10 -19,-10 -11,-1" fill="#e0404a" />
+        <ellipse cx="11" cy="-1" rx="4.5" ry="2" fill="#7fb6e8" />
+      </g>
+    </g>
+  </g>
+)
+
+/* the waterfall where the river pours off the edge of the island */
+const Waterfall = ({ fall, e, rm }) => {
+  const { E, d } = fall
+  const L = 1.3
+  const A = { x: E.x - d.x * 11, y: E.y - d.y * 11 }
+  const B = { x: E.x + d.x * 11, y: E.y + d.y * 11 }
+  const tip = { x: E.x + e.x * L, y: E.y + e.y * L }
+  const poly = [A, B, { x: B.x + e.x * L, y: B.y + e.y * L }, { x: A.x + e.x * L, y: A.y + e.y * L }]
+    .map((p) => `${rd(p.x)},${rd(p.y)}`)
+    .join(' ')
+  return (
+    <g>
+      <polygon points={poly} fill="url(#rm-water)" />
+      {[-6, 0, 6].map((o) => (
+        <line
+          key={o}
+          x1={E.x + d.x * o}
+          y1={E.y + d.y * o}
+          x2={E.x + d.x * o + e.x * L}
+          y2={E.y + d.y * o + e.y * L}
+          stroke="#fff"
+          strokeOpacity=".8"
+          strokeWidth="2.4"
+          strokeDasharray="7 7"
+          strokeLinecap="round"
+        >
+          {!rm && <animate attributeName="stroke-dashoffset" from="0" to="-14" dur={`${0.7 + Math.abs(o) * 0.02}s`} repeatCount="indefinite" />}
+        </line>
+      ))}
+      <ellipse cx={tip.x} cy={tip.y} rx="22" ry="7" fill="#fff" fillOpacity=".6">
+        {!rm && <animate attributeName="ry" values="6;10;6" dur="1.4s" repeatCount="indefinite" />}
+        {!rm && <animate attributeName="fill-opacity" values=".4;.75;.4" dur="1.4s" repeatCount="indefinite" />}
+      </ellipse>
+    </g>
+  )
+}
+
+const DECO_CYCLE = ['tree', 'building', 'pine', 'bush', 'house', 'flowers']
+
+/* scatters trees, buildings and so on over the island, keeping them off the road, the side paths and the river.
+   back: drawn behind the road. front: drawn in front of it (land mode, below the road). */
+const makeDecor = (geo, counts) => {
+  const { proj, LW, LH, mode, ROAD_Y, lnodes, lend } = geo
+  const near = (x, y, samples, r, stride = 1) => {
+    for (let i = 0; i < samples.length; i += stride) {
+      if (Math.hypot(samples[i].lx - x, samples[i].ly - y) < r) return true
+    }
+    return false
+  }
+  const clear = (x, y) =>
+    !near(x, y, geo.river.samples, 46) &&
+    !near(x, y, geo.samples, 40, 2) &&
+    Object.values(geo.branches).every((b) => !near(x, y, b.samples, 34, 2))
+
+  /* how far down the road is at a given x (the road now zig-zags, so "in front of the road" depends on x) */
+  const roadYAt = (x) => {
+    let best = geo.samples[0]
+    for (const s of geo.samples) if (Math.abs(s.lx - x) < Math.abs(best.lx - x)) best = s
+    return best.ly
+  }
+
+  const back = []
+  const front = []
+  const add = (type, x, y, o = {}) => {
+    if (!clear(x, y)) return
+    const p = proj({ x, y })
+    const item = { type, ...o, x: p.x, y: p.y }
+    ;(mode === 'land' && y > roadYAt(x) ? front : back).push(item)
+  }
+
+  if (mode === 'land') {
+    const backTypes = ['tree', 'building', 'pine', 'tree', 'house', 'bush', 'building', 'pine']
+    for (let x = 90, k = 0; x < LW - 50; x += 92, k++) {
+      add(backTypes[k % 8], x, 36 + (k % 2) * 30, { h: 54 + ((k * 23) % 44), tone: k })
+    }
+    lnodes.slice(0, -1).forEach((nd, i) => {
+      const nx = lnodes[i + 1]
+      add(DECO_CYCLE[(i * 2 + 1) % 6], (nd.x + nx.x) / 2, Math.min(nd.y, nx.y) - 78, { h: 60, tone: i })
+    })
+    for (let x = 150, k = 0; x < LW - 40; x += 105, k++) {
+      add(['tree', 'pine', 'bush', 'flowers', 'house'][k % 5], x, Math.min(LH - 30, ROAD_Y + 140 + (k % 2) * 36), { tone: k })
+    }
+    add('lake', 96, LH - 60)
+    add('building', lend.x + 60, ROAD_Y - 80, { h: 104, tone: 2 }) // the goal tower
+  } else {
+    ;[
+      [70, 50, 'tree'],
+      [128, 74, 'building'],
+      [272, 66, 'pine'],
+      [336, 44, 'building'],
+    ].forEach(([x, y, t], k) => add(t, x, y, { h: 70 + k * 8, tone: k }))
+    lnodes.slice(0, -1).forEach((nd, i) => {
+      const nx = lnodes[i + 1]
+      const y = (nd.y + nx.y) / 2
+      const left = i % 2 === 0
+      add(DECO_CYCLE[(i * 2) % 6], left ? 350 : 50, y, { h: 62, tone: i })
+      if (!counts[i]) add(DECO_CYCLE[(i * 2 + 1) % 6], left ? 50 : 350, y, { h: 58, tone: i + 1 })
+    })
+    add('building', 318, lend.y - 14, { h: 108, tone: 2 }) // the goal tower
+    add('lake', 92, lend.y + 56)
+    add('tree', 308, lend.y + 56)
+  }
+
+  back.sort((a, b) => a.y - b.y)
+  front.sort((a, b) => a.y - b.y)
+  return { back, front }
+}
+
+/* sky, the island itself, the river and the scenery behind the road */
+const Backdrop = ({ geo, decor, rm }) => {
+  const { W, H, LW, LH, proj, slab: s, ext: e, fall, river, mode } = geo
+  const pt = (p) => `${rd(p.x)},${rd(p.y)}`
+  const plus = (p) => ({ x: p.x + e.x, y: p.y + e.y })
+  const top = [s.tl, s.tr, s.br, s.bl].map(pt).join(' ')
+  const front = [s.bl, s.br, plus(s.br), plus(s.bl)].map(pt).join(' ')
+  const right = [s.tr, s.br, plus(s.br), plus(s.tr)].map(pt).join(' ')
+  const lip = `M ${pt(s.bl).replace(',', ' ')} L ${pt(s.br).replace(',', ' ')} L ${pt(s.tr).replace(',', ' ')}`
+  const f1 = proj({ x: 14, y: 12 })
+  const f2 = proj({ x: LW - 14, y: 12 })
+  const fence = `M ${rd(f1.x)} ${rd(f1.y)} L ${rd(f2.x)} ${rd(f2.y)}`
+  const patches = [
+    [0.16, 0.34, 90],
+    [0.42, 0.72, 110],
+    [0.7, 0.28, 80],
+    [0.86, 0.74, 100],
+    [0.56, 0.46, 70],
+  ]
+  const strata = [0.4, 0.72]
+
+  return (
+    <>
+      <defs>
+        <linearGradient id="rm-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#9fd3f3" />
+          <stop offset="1" stopColor="#eaf6fd" />
+        </linearGradient>
+        <linearGradient id="rm-top" x1="0" y1="0" x2="0.2" y2="1">
+          <stop offset="0" stopColor="#b4e48a" />
+          <stop offset="1" stopColor="#7cc157" />
+        </linearGradient>
+        <linearGradient id="rm-front" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#8d5c3b" />
+          <stop offset="1" stopColor="#5a3826" />
+        </linearGradient>
+        <linearGradient id="rm-right" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#744730" />
+          <stop offset="1" stopColor="#47291b" />
+        </linearGradient>
+        <linearGradient id="rm-water" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#b9e1f5" />
+          <stop offset="1" stopColor="#7fbfe6" />
+        </linearGradient>
+        <clipPath id="rm-top-clip">
+          <polygon points={top} />
+        </clipPath>
+      </defs>
+
+      <rect width={W} height={H} fill="url(#rm-sky)" />
+
+      {/* sky */}
+      <Sun x={mode === 'land' ? 96 : 62} y={46} rm={rm} />
+      {mode === 'land' ? (
+        <>
+          <Cloud x={W * 0.22} y={44} s={1.1} dur={20} rm={rm} />
+          <Cloud x={W * 0.5} y={66} s={0.9} dur={24} drift={-30} rm={rm} />
+          <Cloud x={W * 0.74} y={38} s={1.2} dur={18} rm={rm} />
+          <Birds x={W * 0.3} y={80} dist={220} rm={rm} />
+        </>
+      ) : (
+        <>
+          <Cloud x={W * 0.7} y={44} s={1} dur={20} drift={20} rm={rm} />
+          <Cloud x={W * 0.38} y={78} s={0.85} dur={24} drift={-24} rm={rm} />
+          <Birds x={W * 0.45} y={84} dist={120} rm={rm} />
+        </>
+      )}
+      <Plane y={58} W={W} rm={rm} />
+
+      {/* the island */}
+      <g className="slab" style={HIDDEN}>
+        <polygon points={right} fill="url(#rm-right)" />
+        <polygon points={front} fill="url(#rm-front)" />
+        {strata.map((t) => (
+          <line
+            key={t}
+            x1={s.bl.x + e.x * t}
+            y1={s.bl.y + e.y * t}
+            x2={s.br.x + e.x * t}
+            y2={s.br.y + e.y * t}
+            stroke="#3b2316"
+            strokeOpacity=".35"
+            strokeWidth="2"
+          />
+        ))}
+        <polygon points={top} fill="url(#rm-top)" />
+
+        {/* lighter patches of grass */}
+        <g clipPath="url(#rm-top-clip)">
+          {patches.map(([fx, fy, r], k) => {
+            const q = proj({ x: LW * fx, y: LH * fy })
+            return <ellipse key={k} cx={q.x} cy={q.y} rx={r} ry={r * 0.28} fill="#c4f09c" opacity=".38" />
+          })}
+
+          {/* the river */}
+          <path d={river.d} fill="none" stroke="#6fb6dc" strokeWidth="30" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#8ec9ea" strokeWidth="25" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#b9e1f5" strokeWidth="14" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#fff" strokeOpacity=".75" strokeWidth="2.4" strokeDasharray="6 18" strokeLinecap="round">
+            {!rm && <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1.4s" repeatCount="indefinite" />}
+          </path>
+        </g>
+
+        {/* grass lip and the white fence along the back */}
+        <path d={lip} fill="none" stroke="#5f9f3d" strokeWidth="6" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={fence} fill="none" stroke="#fff" strokeWidth="9" strokeDasharray="2.5 11" />
+        <path d={fence} fill="none" stroke="#fff" strokeWidth="2" transform="translate(0 -2)" />
+
+        <Waterfall fall={fall} e={e} rm={rm} />
+      </g>
+
+      {/* scenery behind the road */}
+      {decor.back.map((it, k) => (
+        <Deco key={`b${k}`} {...it} />
+      ))}
+    </>
+  )
+}
 
 /* ------------------------------------------------------------------ */
 /* Small shared pieces                                                 */
@@ -130,38 +952,79 @@ const HIDDEN = { opacity: 0 } // animated in by anime.js
 /* online course search links, they open each platform's search page so they never go stale.
    Check the URL formats now and then in case a platform changes them. */
 const COURSE_SOURCES = [
-  { name: 'Udemy', url: (q) => `https://www.udemy.com/courses/search/?q=${encodeURIComponent(q)}` },
-  { name: 'Coursera', url: (q) => `https://www.coursera.org/search?query=${encodeURIComponent(q)}` },
-  { name: 'edX', url: (q) => `https://www.edx.org/search?q=${encodeURIComponent(q)}` },
-  { name: 'YouTube', url: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} course`)}` },
+  { name: 'Udemy', Icon: SiUdemy, bg: '#a435f0', url: (q) => `https://www.udemy.com/courses/search/?q=${encodeURIComponent(q)}` },
+  { name: 'Coursera', Icon: SiCoursera, bg: '#0056d2', url: (q) => `https://www.coursera.org/search?query=${encodeURIComponent(q)}` },
+  { name: 'YouTube', Icon: FaYoutube, bg: '#ff0000', url: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} course`)}` },
 ]
 
-const CourseLinks = ({ topic }) => (
-  <div className="flex flex-wrap gap-2">
-    {COURSE_SOURCES.map((s) => (
-      <a
-        key={s.name}
-        href={s.url(topic)}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`Search ${s.name} for ${topic} courses (opens in a new tab)`}
-        className="rounded-full border border-[#e0d1ba] bg-white px-3 py-1 text-[13px] font-semibold text-[#0b0b2b] transition hover:border-[#0b0b2b] hover:bg-[#f7efe2]"
-      >
-        {s.name} ↗
-      </a>
-    ))}
+/* each platform is a small card with a branded thumbnail tile.
+   fill = three equal compact cards that span the full width (used inside tiles, so there is no leftover space) */
+const CourseLinks = ({ topic, fill = false }) => (
+  <div className={fill ? 'grid grid-cols-3 gap-2' : 'flex flex-wrap gap-2'}>
+    {COURSE_SOURCES.map((s) => {
+      const Icon = s.Icon
+      return (
+        <a
+          key={s.name}
+          href={s.url(topic)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Search ${s.name} for ${topic} courses (opens in a new tab)`}
+          className={`flex min-w-0 items-center gap-2 rounded-xl border border-[#e0d1ba] bg-white p-1.5 transition hover:border-[#0b0b2b] hover:bg-[#f7efe2] ${
+            fill ? 'pr-2' : 'pr-3'
+          }`}
+        >
+          <span
+            className={`flex shrink-0 items-center justify-center rounded-lg text-white shadow-sm ${fill ? 'h-8 w-8' : 'h-9 w-9'}`}
+            style={{ backgroundColor: s.bg }}
+            aria-hidden="true"
+          >
+            <Icon className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate text-[13px] font-extrabold text-[#0b0b2b]">{s.name} ↗</span>
+            {!fill && <span className="block text-[11px] text-neutral-500">Search courses</span>}
+          </span>
+        </a>
+      )
+    })}
   </div>
 )
 
-const Chips = ({ items, cls = 'border-[#e0d1ba]' }) => (
-  <ul className="mt-2 flex flex-wrap gap-2">
-    {items.map((s, i) => (
-      <li key={`${text(s)}-${i}`} className={`rounded-full border bg-white px-3 py-1 text-[13px] text-neutral-700 ${cls}`}>
-        {text(s)}
-      </li>
-    ))}
-  </ul>
-)
+/* text for a chip: strings as-is, objects read by common keys, then any string field (+ a percent if there is one) */
+const chipText = (x) => {
+  const t = text(x)
+  if (t) return t
+  if (!x || typeof x !== 'object') return ''
+  const str = Object.values(x).find((v) => typeof v === 'string' && v.trim())
+  const pct = Object.entries(x).find(([k, v]) => /percent|pct|share/i.test(k) && typeof v === 'number')
+  return str ? `${str}${pct ? ` · ${Math.round(pct[1])}%` : ''}` : ''
+}
+
+/* drop empty and repeated entries (used when two skill lists are shown as one) */
+const uniq = (arr) => {
+  const seen = new Set()
+  return arr.filter((x) => {
+    const t = chipText(x).trim().toLowerCase()
+    if (!t || seen.has(t)) return false
+    seen.add(t)
+    return true
+  })
+}
+
+const Chips = ({ items, cls = 'border-[#e0d1ba]' }) => {
+  const shown = items.map(chipText).filter(Boolean)
+  if (!shown.length) return null
+  return (
+    <ul className="mt-2 flex flex-wrap gap-2">
+      {shown.map((t, i) => (
+        <li key={`${t}-${i}`} className={`rounded-full border bg-white px-3 py-1 text-[13px] text-neutral-700 ${cls}`}>
+          {t}
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 const Box = ({ children, className = '' }) => (
   <section className={`rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-6 shadow-sm ${className}`}>{children}</section>
@@ -177,34 +1040,16 @@ const Chevron = ({ className = '' }) => (
   </svg>
 )
 
-const Acc = ({ title, hint, children }) => (
-  <details className="group border-b border-[#e6d8c3] py-4 last:border-b-0">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-      <div className="min-w-0">
-        <div className="text-base font-extrabold text-black">{title}</div>
-        <div className="text-[13px] text-neutral-500">{hint}</div>
-      </div>
-      <Chevron />
-    </summary>
-    <div className="mt-4 space-y-4">{children}</div>
-  </details>
+/* one skill tile: the name, with the course links always visible right below it */
+const SkillRow = ({ skill }) => (
+  <div className="min-w-0 rounded-2xl bg-white/70 p-3">
+    <div className="mb-2 break-words text-sm font-extrabold leading-tight text-black">{skill}</div>
+    <CourseLinks topic={skill} fill />
+  </div>
 )
 
-/* one skill row with course links tucked behind a toggle */
-const SkillRow = ({ skill }) => (
-  <details className="group border-b border-[#f0c4c7] py-3 first:pt-0 last:border-b-0 last:pb-0">
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-      <span className="min-w-0 text-sm font-extrabold text-black">{skill}</span>
-      <span className="flex shrink-0 items-center gap-1 rounded-full border border-[#e0d1ba] bg-white px-3 py-1 text-xs font-bold text-[#0b0b2b]">
-        Find courses
-        <Chevron className="!h-4 !w-4 !text-[#0b0b2b]" />
-      </span>
-    </summary>
-    <div className="mt-3">
-      <CourseLinks topic={skill} />
-    </div>
-  </details>
-)
+/* tiles share the row evenly: as many columns as fit, and they stretch to fill the width */
+const fit = (min) => ({ gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))` })
 
 /* ------------------------------------------------------------------ */
 /* Cheer: your character greets you, then keeps cheering you on        */
@@ -240,8 +1085,12 @@ const STEP_LINES = [
   'Yes! That is real progress!',
   'Look at that. You are unstoppable!',
 ]
+const SIDE_LINES = [
+  'A side quest! Extra credit, no pressure.',
+  'Optional, but you are making yourself stand out!',
+]
 
-const cheerPool = (progress, allDone, nextTitle) => {
+const cheerPool = (progress, allDone, nextTitle, hasSide) => {
   const base = allDone
     ? DONE_LINES
     : progress === 0
@@ -251,18 +1100,21 @@ const cheerPool = (progress, allDone, nextTitle) => {
         : progress < 70
           ? MID_LINES
           : LATE_LINES
-  return nextTitle && !allDone ? [...base, `Next up: ${nextTitle}. You can do this!`] : base
+  const extra = []
+  if (nextTitle && !allDone) extra.push(`Next up: ${nextTitle}. You can do this!`)
+  if (hasSide) extra.push(SIDE_LINES[0])
+  return [...base, ...extra]
 }
 
 /* a new line every 7 seconds; finishing a step shows a celebration line right away and restarts the timer */
 const CHEER_EVERY = 7000
 
-const useCheerLine = ({ theme, progress, allDone, nextTitle, celebrate }) => {
+const useCheerLine = ({ theme, progress, allDone, nextTitle, celebrate, hasSide }) => {
   const greeting = `Hi there! I’m your ${theme.name}. Let’s tackle this roadmap together!`
   const [msg, setMsg] = useState(greeting)
   const turn = useRef(0)
   const latest = useRef({})
-  latest.current = { progress, allDone, nextTitle }
+  latest.current = { progress, allDone, nextTitle, hasSide }
   const firstRun = useRef(true)
 
   useEffect(() => {
@@ -273,8 +1125,8 @@ const useCheerLine = ({ theme, progress, allDone, nextTitle, celebrate }) => {
       setMsg(pool[turn.current++ % pool.length])
     }
     const id = setInterval(() => {
-      const { progress: p, allDone: a, nextTitle: n } = latest.current
-      const pool = cheerPool(p, a, n)
+      const { progress: p, allDone: a, nextTitle: n, hasSide: s } = latest.current
+      const pool = cheerPool(p, a, n, s)
       setMsg(pool[turn.current++ % pool.length])
     }, CHEER_EVERY)
     return () => clearInterval(id)
@@ -283,43 +1135,10 @@ const useCheerLine = ({ theme, progress, allDone, nextTitle, celebrate }) => {
   return msg
 }
 
-/* desktop: big card in the right column */
-const CheerCard = ({ code, theme, progress, allDone, celebrate, nextTitle }) => {
-  const msg = useCheerLine({ theme, progress, allDone, nextTitle, celebrate })
-
-  return (
-    <div className="rounded-2xl border-2 border-[#0b0b2b] p-4 shadow-lg" style={{ backgroundColor: theme.tint }}>
-      <style>{`
-        @keyframes cheerBubbleIn { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .cheer-bubble { animation: none !important; } }
-      `}</style>
-
-      <div className="text-xs font-bold uppercase tracking-wide" style={{ color: theme.dark }}>
-        {String(code).toUpperCase()} · {theme.name} is cheering for you
-      </div>
-
-      {/* speech bubble */}
-      <div
-        key={msg}
-        className="cheer-bubble relative mt-3 flex min-h-[64px] items-center rounded-2xl border-2 border-[#0b0b2b] bg-white px-4 py-3 text-sm font-bold leading-snug text-black"
-        style={{ animation: 'cheerBubbleIn .35s ease-out' }}
-      >
-        {msg}
-        <span
-          aria-hidden="true"
-          className="absolute -bottom-[9px] left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 border-b-2 border-r-2 border-[#0b0b2b] bg-white"
-        />
-      </div>
-
-      <MbtiCharacter code={code} cheer celebrate={celebrate} className="mx-auto mt-4 w-[200px]" />
-    </div>
-  )
-}
-
-/* mobile: a small character that rides above the focus card, so it follows you as you scroll.
-   The bubble appears with each new line and hides again after 5 seconds. */
-const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle }) => {
-  const msg = useCheerLine({ theme, progress, allDone, nextTitle, celebrate })
+/* the cheering character rides above the focus card on every screen size (desktop too),
+   so it stays with you while you scroll. The bubble appears with each new line and hides after 5 seconds. */
+const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSide, big }) => {
+  const msg = useCheerLine({ theme, progress, allDone, nextTitle, celebrate, hasSide })
   const [show, setShow] = useState(true)
 
   useEffect(() => {
@@ -329,7 +1148,7 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle }) => 
   }, [msg])
 
   return (
-    <div className="pointer-events-none absolute bottom-full right-1 z-30 mb-2 flex items-end gap-1">
+    <div className="pointer-events-none absolute bottom-full right-1 z-30 mb-2 flex items-end gap-1 lg:right-4">
       <style>{`
         @keyframes miniBubbleIn { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { .mini-bubble { animation: none !important; } }
@@ -338,7 +1157,9 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle }) => 
       {show && (
         <div
           key={msg}
-          className="mini-bubble relative mb-6 max-w-[190px] rounded-2xl border-2 border-[#0b0b2b] bg-white px-3 py-2 text-xs font-bold leading-snug text-black shadow-md"
+          className={`mini-bubble relative rounded-2xl border-2 border-[#0b0b2b] bg-white px-3 py-2 font-bold leading-snug text-black shadow-md ${
+            big ? 'mb-9 max-w-[280px] text-sm' : 'mb-6 max-w-[190px] text-xs'
+          }`}
           style={{ animation: 'miniBubbleIn .3s ease-out' }}
           role="status"
         >
@@ -351,13 +1172,13 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle }) => 
       )}
 
       <div className="rounded-full shadow-lg" style={{ backgroundColor: theme.tint }}>
-        <MbtiCharacter code={code} cheer celebrate={celebrate} className="w-[84px]" />
+        <MbtiCharacter code={code} cheer celebrate={celebrate} className={big ? 'w-[112px]' : 'w-[84px]'} />
       </div>
     </div>
   )
 }
 
-/* true on desktop widths, so only one cheering character is mounted at a time */
+/* true on desktop widths: landscape map there, portrait map everywhere else */
 const useIsDesktop = () => {
   const q = '(min-width: 1024px)'
   const [m, setM] = useState(() => typeof window !== 'undefined' && !!window.matchMedia?.(q).matches)
@@ -372,39 +1193,6 @@ const useIsDesktop = () => {
 }
 
 /* ------------------------------------------------------------------ */
-/* Map decorations (static scenery drawn between the stops)            */
-/* ------------------------------------------------------------------ */
-const Deco = ({ type, x, y }) => (
-  <g className="pop-deco" style={HIDDEN} transform={`translate(${x} ${y})`}>
-    {type === 'mountain' && (
-      <>
-        <polygon points="-34,24 -4,-26 26,24" fill="#c9b78f" />
-        <polygon points="-14,-6 -4,-26 6,-6 0,-10 -6,-4" fill="#fff" />
-        <polygon points="8,24 28,-6 48,24" fill="#b9a67a" />
-      </>
-    )}
-    {type === 'tree' && (
-      <>
-        <rect x="-3" y="6" width="6" height="18" rx="2" fill="#8a6a45" />
-        <circle cx="0" cy="-4" r="17" fill="#7fb487" />
-        <circle cx="-3" cy="-16" r="11" fill="#6aa571" />
-      </>
-    )}
-    {type === 'bush' && (
-      <>
-        <ellipse cx="0" cy="14" rx="26" ry="10" fill="#7fb487" />
-        <ellipse cx="-12" cy="8" rx="13" ry="10" fill="#6aa571" />
-        <ellipse cx="12" cy="9" rx="12" ry="9" fill="#8cc193" />
-      </>
-    )}
-  </g>
-)
-
-const DECO_TYPES = ['tree', 'mountain', 'bush']
-
-const CONFETTI = ['#2f80e0', '#f2c230', '#e0404a', '#2f9e62', '#0b0b2b']
-
-/* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 const UserRoadMap = () => {
@@ -416,27 +1204,31 @@ const UserRoadMap = () => {
   const [pred, setPred] = useState(null)
   const [road, setRoad] = useState(null)
   const [done, setDone] = useState([])
-  const [focusIdx, setFocusIdx] = useState(null) // null = follow the next unfinished step
+  const [focusIdx, setFocusIdx] = useState(null) // null = follow the next unfinished main step
   const [celebrate, setCelebrate] = useState(0) // goes up each time a step is finished, the cheering character reacts
-  /* the intro preview: the character walks the whole route once, then returns to your step */
+  /* the intro preview: the character walks the whole main route once, then returns to your step */
   const [previewing, setPreviewing] = useState(() => !reducedMotion())
   const [previewRun, setPreviewRun] = useState(0)
 
   /* animation refs */
   const mapRef = useRef(null)
+  const stripRef = useRef(null) // the sideways scroller on desktop
   const charRef = useRef(null)
   const bobRef = useRef(null)
   const trailRef = useRef(null)
   const previewRef = useRef(null)
-  const charF = useRef({ f: 0 })
+  const charS = useRef({ f: 0, b: 0, br: null }) // f: along main route, b: along side path number br (0 = on main route)
+  const charPos = useRef(null)
   const trailF = useRef({ f: 0 })
-  const walkAnim = useRef(null)
   const trailAnim = useRef(null)
   const introDone = useRef({ walk: false, trail: false })
+  const ranPreview = useRef(-1)
   const prevAllDone = useRef(null)
   const followRef = useRef(false) // page scrolls along with the character while true
   const scrollerRef = useRef(null)
   const skipRef = useRef(null)
+  const geoRef = useRef(null)
+  const fxRef = useRef(null) // overlay where the celebration confetti is added
 
   useEffect(() => {
     let cancelled = false
@@ -476,13 +1268,15 @@ const UserRoadMap = () => {
     }
   }, [state?.predictionId])
 
-  /* checklist progress, remembered per prediction + career */
+  /* checklist progress, remembered per prediction + career.
+     Keys are the step's index in the original list, so saved progress keeps working. */
   const storeKey = pred && road ? `roadmapProgress:${pred.id}:${road.career?.title}` : null
 
   useEffect(() => {
     if (!storeKey) return
     try {
-      setDone(JSON.parse(localStorage.getItem(storeKey) || '[]'))
+      const saved = JSON.parse(localStorage.getItem(storeKey) || '[]')
+      setDone(Array.isArray(saved) ? saved : [])
     } catch {
       setDone([])
     }
@@ -515,28 +1309,79 @@ const UserRoadMap = () => {
   }, [])
 
   /* ---- derived values (kept above the early returns so hooks stay in order) ---- */
-  const steps = list(road?.roadmap?.timeline?.steps)
-  const progress = steps.length ? Math.round((done.length / steps.length) * 100) : 0
-  const nextIdx = steps.findIndex((_, i) => !done.includes(String(i)))
-  const allDone = steps.length > 0 && nextIdx === -1
 
-  /* the step in focus: the one the user clicked, otherwise the next unfinished step */
-  const active = steps.length
-    ? Math.min(focusIdx ?? (nextIdx >= 0 ? nextIdx : steps.length - 1), steps.length - 1)
+  /* split the steps: main path vs optional side paths */
+  const plan = useMemo(() => {
+    const arranged = arrangeSteps(list(road?.roadmap?.timeline?.steps))
+    const steps = arranged.map((a) => a.s)
+    const keys = arranged.map((a) => a.key) // saved-progress keys (original index, so old progress still matches)
+    const all = arranged.map((a, i) => ({ i, s: a.s, k: a.key, opt: isOptional(a.s), phase: a.phase, guess: a.guess, edu: a.edu, win: a.win }))
+    let main = all.filter((x) => !x.opt)
+    if (!main.length) main = all // everything optional? then treat all as main so the map still works
+    const mainSet = new Set(main.map((x) => x.i))
+    const side = main.map(() => [])
+    const where = {}
+    main.forEach((x, m) => {
+      where[x.i] = { kind: 'main', m }
+    })
+    all
+      .filter((x) => !mainSet.has(x.i))
+      .forEach((x) => {
+        let m = 0 // hangs off the last main step before it (or the first one)
+        main.forEach((y, pos) => {
+          if (y.i < x.i) m = pos
+        })
+        side[m].push(x)
+        where[x.i] = { kind: 'side', m, j: side[m].length - 1 }
+      })
+    /* main steps done while studying (e.g. skills built during school) point at the degree step */
+    const alongside = {}
+    const eduPos = main.findIndex((x) => x.edu && !x.guess)
+    if (eduPos >= 0) {
+      const y = main[eduPos]
+      main.forEach((x) => {
+        if (x.edu || x.guess) return
+        const lenA = y.win.end - y.win.start
+        const lenB = x.win.end - x.win.start
+        const overlap = Math.min(x.win.end, y.win.end) - Math.max(x.win.start, y.win.start)
+        if (lenB > 0 && overlap / lenB >= 0.8 && lenB >= lenA * 0.6) alongside[x.i] = eduPos + 1
+      })
+    }
+    return { steps, keys, all, main, side, where, alongside, counts: side.map((a) => a.length) }
+  }, [road])
+
+  const { steps, main: mainSteps } = plan
+  const total = steps.length
+  const isDone = (i) => done.includes(plan.keys[i])
+  const mainDoneCount = mainSteps.filter((x) => isDone(x.i)).length
+  const sideTotal = total - mainSteps.length
+  const sideDoneCount = plan.all.filter((x) => plan.where[x.i]?.kind === 'side' && done.includes(x.k)).length
+  /* timing line under a step: its own timing, plus a note when it runs alongside an earlier step */
+  const subLine = (i, s) => [sub(s), plan.alongside[i] ? `with step ${plan.alongside[i]}` : ''].filter(Boolean).join(' · ')
+  const progress = mainSteps.length ? Math.round((mainDoneCount / mainSteps.length) * 100) : 0
+  const nextIdx = mainSteps.find((x) => !isDone(x.i))?.i ?? -1
+  const allDone = mainSteps.length > 0 && nextIdx === -1
+
+  /* the step in focus: the one the user clicked, otherwise the next unfinished main step */
+  const active = total
+    ? Math.min(Math.max(focusIdx ?? (nextIdx >= 0 ? nextIdx : mainSteps[mainSteps.length - 1].i), 0), total - 1)
     : 0
 
-  const lastDone = done.reduce((m, k) => {
-    const n = Number(k)
-    return Number.isInteger(n) && n < steps.length ? Math.max(m, n) : m
-  }, -1)
+  const lastDoneMain = mainSteps.reduce((m, x, pos) => (isDone(x.i) ? pos : m), -1)
 
-  const geo = useMemo(() => (steps.length ? buildMap(steps.length) : null), [steps.length])
-  const trailTarget = geo ? (allDone ? 1 : lastDone >= 0 ? geo.nodeFrac[lastDone] : 0) : 0
+  const geoMode = isDesktop ? 'land' : 'port'
+  const geo = useMemo(() => (mainSteps.length ? buildMap(plan.counts, isDesktop ? 'land' : 'port') : null), [plan, isDesktop])
+  geoRef.current = geo
+  const decor = useMemo(() => (geo ? makeDecor(geo, plan.counts) : null), [geo, plan])
+  const trailTarget = geo ? (allDone ? 1 : lastDoneMain >= 0 ? geo.nodeFrac[lastDoneMain] : 0) : 0
 
-  const placeChar = (g, f) => {
+  const placeChar = (g) => {
     const el = charRef.current
-    if (!el) return
-    const p = posAt(g, f)
+    if (!el || !g) return
+    const st = charS.current
+    const br = st.br != null ? g.branches[st.br] : null
+    const p = br && st.b > 0.0005 ? posAt(br, st.b) : posAt(g, st.f)
+    charPos.current = p
     el.style.left = pctX(g, p.x)
     el.style.top = pctY(g, p.y)
   }
@@ -552,8 +1397,22 @@ const UserRoadMap = () => {
     previewRef.current?.setAttribute('stroke-dashoffset', String(1000 - f * 1000))
   }
 
-  /* gently scroll so the walking character stays around the middle of the screen */
+  /* landscape: slide the map sideways so the character stays in the middle (snap = jump instead of glide) */
+  const centerStrip = (snap) => {
+    const g = geoRef.current
+    const sc = stripRef.current
+    if (!g || !sc || !charPos.current || sc.scrollWidth <= sc.clientWidth + 2) return
+    const want = (charPos.current.x / g.W) * sc.scrollWidth - sc.clientWidth / 2
+    sc.scrollLeft = snap ? want : sc.scrollLeft + (want - sc.scrollLeft) * 0.2
+  }
+
+  /* portrait: gently scroll so the walking character stays around the middle of the screen */
   const follow = () => {
+    const g = geoRef.current
+    if (g?.mode === 'land') {
+      centerStrip(false)
+      return
+    }
     if (!followRef.current || !charRef.current || !scrollerRef.current) return
     const sc = scrollerRef.current
     const isDoc = sc === document.scrollingElement || sc === document.documentElement || sc === document.body
@@ -572,7 +1431,27 @@ const UserRoadMap = () => {
 
   const skipPreview = () => skipRef.current?.()
 
-  /* 1. entrance: the map fades in, stops pop up one after another */
+  /* a finished step: confetti, stars and rings burst out of its stop, a word floats up and the stop bounces */
+  const celebrateStep = (idx) => {
+    const g = geoRef.current
+    const root = fxRef.current
+    const w = plan.where[idx]
+    if (!g || !root || !w || reducedMotion()) return
+    const side = w.kind === 'side'
+    const p = side ? g.branches[w.m].nodes[w.j] : g.nodes[w.m]
+    popAt(root, pctX(g, p.x), pctY(g, p.y), {
+      count: side ? 36 : 52,
+      ring: side ? SIDE : '#2f80e0',
+      colors: side ? [SIDE, '#c4b0fa', '#f2c230', '#ffffff', '#e0404a'] : CONFETTI,
+      word: pick(FX_WORDS),
+    })
+    const nodeEls = mapRef.current?.querySelectorAll(side ? '.side-node' : '.step-node')
+    const k = side ? plan.side.slice(0, w.m).reduce((sum, a) => sum + a.length, 0) + w.j : w.m
+    const el = nodeEls?.[k]
+    if (el) animate(el, { scale: [1, 1.4, 1], duration: 520, ease: 'outBack' })
+  }
+
+  /* 1. entrance: the island fades in, the road builds itself, scenery drops in and stops pop up one after another */
   useEffect(() => {
     if (status !== 'ready' || !geo || !mapRef.current) return
     const root = mapRef.current
@@ -581,11 +1460,22 @@ const UserRoadMap = () => {
     const labels = q('.pop-label')
     const decos = q('.pop-deco')
     const base = q('.base-trail')
+    const slabs = q('.slab')
+    const roads = q('.road-draw')
 
-    const showAll = () =>
-      [...nodes, ...labels, ...decos, ...base].forEach((el) => {
+    /* the road is drawn with a dash trick, so "f" is how much of it is built */
+    const setRoad = (f) =>
+      roads.forEach((el) => {
+        el.setAttribute('stroke-dashoffset', String(1000 - f * 1000))
+        el.setAttribute('opacity', f > 0.001 ? '1' : '0')
+      })
+
+    const showAll = () => {
+      ;[...nodes, ...labels, ...decos, ...base, ...slabs].forEach((el) => {
         el.style.opacity = '1'
       })
+      setRoad(1)
+    }
 
     if (reducedMotion()) {
       showAll()
@@ -593,16 +1483,39 @@ const UserRoadMap = () => {
     }
 
     const runs = []
-    if (base.length) runs.push(animate(base, { opacity: [0, 1], duration: 900, ease: 'outQuad' }))
+    if (slabs.length) runs.push(animate(slabs, { opacity: [0, 1], duration: 650, ease: 'outQuad' }))
+
+    const roadF = { f: 0 }
+    setRoad(0)
+    runs.push(
+      animate(roadF, {
+        f: 1,
+        duration: 1500,
+        delay: 400,
+        ease: 'inOutSine',
+        onUpdate: () => setRoad(roadF.f),
+        onComplete: () => setRoad(1),
+      })
+    )
+
+    if (base.length) runs.push(animate(base, { opacity: [0, 1], duration: 700, delay: 1300, ease: 'outQuad' }))
     if (decos.length)
-      runs.push(animate(decos, { opacity: [0, 1], duration: 700, delay: stagger(90, { start: 200 }), ease: 'outQuad' }))
+      runs.push(
+        animate(decos, {
+          opacity: [0, 1],
+          translateY: [-18, 0],
+          duration: 700,
+          delay: stagger(40, { start: 300 }),
+          ease: 'outBack',
+        })
+      )
     if (nodes.length)
       runs.push(
         animate(nodes, {
           opacity: [0, 1],
           scale: [0.2, 1],
           duration: 700,
-          delay: stagger(110, { start: 250 }),
+          delay: stagger(90, { start: 700 }),
           ease: 'outBack',
         })
       )
@@ -612,24 +1525,29 @@ const UserRoadMap = () => {
           opacity: [0, 1],
           translateY: [8, 0],
           duration: 600,
-          delay: stagger(110, { start: 350 }),
+          delay: stagger(90, { start: 800 }),
           ease: 'outQuad',
         })
       )
 
     // if an animation is interrupted or fails, don't leave the map invisible
-    const fallback = setTimeout(showAll, 3500)
+    const fallback = setTimeout(showAll, 4500)
     return () => {
       clearTimeout(fallback)
       runs.forEach((a) => a.pause())
     }
   }, [status, geo])
 
-  /* 1b. the preview: the character flies down the whole route (a yellow trail draws behind it,
+  /* 1b. the preview: the character flies down the whole main route (a yellow trail draws behind it,
          each stop bumps as it passes), then the normal "walk to your step" effect takes over */
   useEffect(() => {
     if (status !== 'ready') return
     if (!geo || reducedMotion()) {
+      setPreviewing(false)
+      return
+    }
+    // the layout switched (desktop <-> mobile) after the preview already played: don't play it again
+    if (ranPreview.current === previewRun) {
       setPreviewing(false)
       return
     }
@@ -639,7 +1557,7 @@ const UserRoadMap = () => {
 
     const stepNodes = Array.from(root.querySelectorAll('.step-node'))
     const flag = root.querySelector('.finish-node')
-    const st = charF.current
+    const st = charS.current
     const bumped = new Set()
     let startT = 0
     let endT = 0
@@ -648,7 +1566,9 @@ const UserRoadMap = () => {
     let ended = false
 
     st.f = 0
-    placeChar(geo, 0)
+    st.b = 0
+    st.br = null
+    placeChar(geo)
     drawPreview(0)
     prevPath.style.opacity = '0'
     scrollerRef.current = scrollParent(charRef.current)
@@ -661,6 +1581,7 @@ const UserRoadMap = () => {
     const end = () => {
       if (ended) return
       ended = true
+      ranPreview.current = previewRun
       fade = animate(prevPath, { opacity: [1, 0], duration: 600, ease: 'outQuad' })
       introDone.current.walk = true
       introDone.current.trail = true
@@ -679,10 +1600,10 @@ const UserRoadMap = () => {
         prevPath.style.opacity = '1'
         anim = animate(st, {
           f: 1,
-          duration: Math.min(6000, 1800 + geo.nodes.length * 500),
+          duration: Math.min(6500, 1800 + geo.nodes.length * 520),
           ease: 'inOutSine',
           onUpdate: () => {
-            placeChar(geo, st.f)
+            placeChar(geo)
             drawPreview(st.f)
             geo.nodeFrac.forEach((nf, i) => {
               if (!bumped.has(i) && st.f >= nf - 0.004) {
@@ -693,14 +1614,14 @@ const UserRoadMap = () => {
             follow()
           },
           onComplete: () => {
-            placeChar(geo, 1)
+            placeChar(geo)
             drawPreview(1)
             bump(flag)
             endT = setTimeout(end, 500)
           },
         })
       },
-      previewRun === 0 ? 1500 : 250
+      previewRun === 0 ? 2300 : 250
     )
 
     return () => {
@@ -712,7 +1633,7 @@ const UserRoadMap = () => {
     }
   }, [status, geo, previewRun])
 
-  /* 2. the traveled route draws itself up to the last finished step */
+  /* 2. the traveled route draws itself up to the last finished main step */
   useEffect(() => {
     if (status !== 'ready' || !geo) return
     const st = trailF.current
@@ -738,37 +1659,96 @@ const UserRoadMap = () => {
     })
   }, [status, geo, trailTarget, previewing])
 
-  /* 3. the character walks along the route to the step in focus
-        (right after the preview, this is the walk back from the finish line) */
+  /* 3. the character walks to the step in focus.
+        Main step: along the main route. Optional step: along the main route to its branch point,
+        then up the side path. Switching between paths walks back through the branch point. */
   useEffect(() => {
-    if (status !== 'ready' || !geo) return
-    const target = geo.nodeFrac[active]
-    const st = charF.current
-    walkAnim.current?.pause()
-    if (previewing) return // the preview is moving the character
+    if (status !== 'ready' || !geo || previewing) return
+    const w = plan.where[active]
+    if (!w) return
+    const st = charS.current
+    const side = w.kind === 'side'
+    const tgt = {
+      f: geo.nodeFrac[w.m],
+      br: side ? w.m : null,
+      b: side ? geo.branches[w.m].fracs[w.j + 1] : 0,
+    }
 
     if (reducedMotion()) {
-      st.f = target
-      placeChar(geo, st.f)
+      st.f = tgt.f
+      st.br = tgt.br
+      st.b = tgt.b
+      placeChar(geo)
+      centerStrip(true)
       return
     }
 
-    walkAnim.current = animate(st, {
-      f: target,
-      duration: Math.min(3200, 600 + Math.abs(target - st.f) * 3400),
-      delay: introDone.current.walk ? 0 : 900,
-      ease: 'inOutSine',
-      onUpdate: () => {
-        placeChar(geo, st.f)
-        follow()
-      },
-      onComplete: () => {
-        placeChar(geo, st.f)
-        introDone.current.walk = true
-        followRef.current = false
-      },
-    })
-  }, [status, geo, active, previewing])
+    let dead = false
+    let startT = 0
+    const anims = []
+    const tick = () => {
+      placeChar(geo)
+      follow()
+    }
+    const run = (props, duration, next) => {
+      anims.push(
+        animate(st, {
+          ...props,
+          duration,
+          ease: 'inOutSine',
+          onUpdate: tick,
+          onComplete: () => {
+            if (!dead) next?.()
+          },
+        })
+      )
+    }
+    const sideTime = (delta) => 350 + Math.abs(delta) * 1400
+    const finish = () => {
+      placeChar(geo)
+      introDone.current.walk = true
+      followRef.current = false
+    }
+    const goBranch = () => {
+      if (!side) return finish()
+      st.br = tgt.br
+      run({ b: tgt.b }, sideTime(tgt.b - st.b), finish)
+    }
+    const goMain = () => {
+      if (Math.abs(st.f - tgt.f) < 0.0005) {
+        st.f = tgt.f
+        goBranch()
+      } else {
+        run({ f: tgt.f }, Math.min(3200, 600 + Math.abs(tgt.f - st.f) * 3400), goBranch)
+      }
+    }
+    const begin = () => {
+      if (st.b > 0.0005) {
+        if (side && st.br === tgt.br) {
+          st.f = tgt.f
+          run({ b: tgt.b }, sideTime(tgt.b - st.b), finish)
+          return
+        }
+        run({ b: 0 }, sideTime(st.b), () => {
+          st.b = 0
+          st.br = null
+          goMain()
+        })
+      } else {
+        st.b = 0
+        st.br = null
+        goMain()
+      }
+    }
+
+    startT = setTimeout(begin, introDone.current.walk ? 0 : 900)
+    return () => {
+      dead = true
+      clearTimeout(startT)
+      anims.forEach((a) => a.pause())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, geo, plan, active, previewing])
 
   /* 4. idle bob for the character */
   useEffect(() => {
@@ -798,29 +1778,31 @@ const UserRoadMap = () => {
     return () => a.pause()
   }, [status, geo, active])
 
-  /* 6. confetti when the last step is finished */
+  /* 6. the big celebration when the last main step is finished:
+        a huge burst at the goal, confetti raining over the whole map and fireworks going off one after another */
   useEffect(() => {
     if (status !== 'ready' || !mapRef.current) return
     const justFinished = prevAllDone.current === false && allDone
     prevAllDone.current = allDone
     if (!justFinished || reducedMotion()) return
 
-    const pieces = Array.from(mapRef.current.querySelectorAll('.confetti'))
-    if (!pieces.length) return
-    const rand = (min, max) => min + Math.random() * (max - min)
-    pieces.forEach((el) => {
-      el.style.transform = 'none'
-    })
-    const a = animate(pieces, {
-      translateX: () => rand(-120, 120),
-      translateY: () => rand(-150, -20),
-      rotate: () => rand(-240, 240),
-      opacity: [1, 0],
-      duration: 1500,
-      delay: stagger(18),
-      ease: 'outQuad',
-    })
-    return () => a.pause()
+    const root = fxRef.current
+    const g = geoRef.current
+    if (!root || !g) return
+
+    popAt(root, pctX(g, g.end.x), pctY(g, g.end.y), { count: 90, spread: 230, ring: '#2f9e62', word: 'You did it!' })
+    rainDown(root, 120)
+
+    const timers = [[16, 34], [80, 30], [48, 20], [28, 62], [68, 60]].map(([lx, ty], k) =>
+      setTimeout(() => {
+        if (root.isConnected) popAt(root, `${lx}%`, `${ty}%`, { count: 38, spread: 140, ring: pick(CONFETTI) })
+      }, 450 + k * 380)
+    )
+
+    const flag = mapRef.current.querySelector('.finish-node')
+    if (flag) animate(flag, { scale: [1, 1.5, 1], duration: 700, ease: 'outBack' })
+
+    return () => timers.forEach(clearTimeout)
   }, [status, allDone])
 
   /* ---- early returns ---- */
@@ -850,8 +1832,10 @@ const UserRoadMap = () => {
   const career = road?.career ?? {}
   const roadmap = road?.roadmap ?? {}
   const activeStep = steps[active]
-  const activeKey = String(active)
+  const activeKey = plan.keys[active]
   const activeDone = done.includes(activeKey)
+  const activeWhere = plan.where[active]
+  const activeIsSide = activeWhere?.kind === 'side'
 
   const match = list(pred.recommended).find((c) => c.title === career.title)
   const have = list(match?.skillsHave)
@@ -870,19 +1854,468 @@ const UserRoadMap = () => {
   const certificates = list(roadmap.certificates)
   const hasEdu = roadmap.education?.typical || programs.length > 0 || certificates.length > 0
 
-  const goTo = (i) => setFocusIdx(Math.max(0, Math.min(steps.length - 1, i)))
+  const goTo = (i) => setFocusIdx(Math.max(0, Math.min(total - 1, i)))
 
   const finishActive = () => {
     const wasDone = activeDone
     toggle(activeKey)
     if (!wasDone) {
-      setFocusIdx(null) // jump on to the next unfinished step
+      celebrateStep(active) // confetti burst at the stop that was just finished
+      setFocusIdx(null) // jump on to the next unfinished main step
       setCelebrate((n) => n + 1) // the cheering character celebrates
     }
   }
 
   const estimatedTotal = text(roadmap.timeline?.estimatedTotal)
   const canPreview = !reducedMotion()
+  const nextTitle = nextIdx >= 0 ? title(steps[nextIdx]) : ''
+  const land = geoMode === 'land'
+
+  /* ---- THE MAP ---- */
+  const mapInner = geo && (
+    <div
+      ref={mapRef}
+      className={
+        land
+          ? 'relative'
+          : 'relative mx-auto w-full max-w-[460px] overflow-hidden rounded-3xl border-2 border-[#0b0b2b] shadow-sm'
+      }
+      style={{ containerType: 'inline-size', ...(land ? { width: '100%', minWidth: `${geo.W}px` } : {}) }}
+    >
+      <svg
+        viewBox={`0 0 ${geo.W} ${geo.H}`}
+        className="block h-auto w-full"
+        role="img"
+        aria-label={`Map of your ${mainSteps.length} main steps${sideTotal ? ` and ${sideTotal} optional side steps` : ''} toward becoming ${career.title}`}
+      >
+        {/* sky, island, river, waterfall and the scenery behind the road */}
+        <Backdrop geo={geo} decor={decor} rm={!canPreview} />
+
+        {/* the road: a soft shadow, the kerb, then the asphalt (these two build themselves in) */}
+        <path
+          className="base-trail"
+          d={geo.d}
+          fill="none"
+          stroke="#1b3a14"
+          strokeOpacity=".2"
+          strokeWidth="36"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          transform="translate(0 5)"
+          style={HIDDEN}
+        />
+        <path
+          className="road-draw"
+          d={geo.d}
+          pathLength="1000"
+          fill="none"
+          stroke="#9aa0b0"
+          strokeWidth="36"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="1000 2000"
+          strokeDashoffset="1000"
+          opacity="0"
+        />
+        <path
+          className="road-draw"
+          d={geo.d}
+          pathLength="1000"
+          fill="none"
+          stroke="#4b4f5c"
+          strokeWidth="29"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="1000 2000"
+          strokeDashoffset="1000"
+          opacity="0"
+        />
+
+        {/* side paths: optional steps branch off the main road, dashed and purple */}
+        {Object.entries(geo.branches).map(([m, br]) => {
+          const sideItems = plan.side[m]
+          const lastDoneSide = sideItems.reduce((acc, it, j) => (isDone(it.i) ? j : acc), -1)
+          const f = lastDoneSide >= 0 ? br.fracs[lastDoneSide + 1] : 0
+          return (
+            <g key={`branch-${m}`}>
+              <path
+                className="base-trail"
+                d={br.d}
+                fill="none"
+                stroke="#efe6ff"
+                strokeWidth="15"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity=".9"
+                style={HIDDEN}
+              />
+              <path
+                className="base-trail"
+                d={br.d}
+                fill="none"
+                stroke={SIDE}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="2 10"
+                opacity=".8"
+                style={HIDDEN}
+              />
+              <path
+                d={br.d}
+                pathLength="1000"
+                fill="none"
+                stroke={SIDE}
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray="1000 2000"
+                style={{
+                  strokeDashoffset: 1000 - f * 1000,
+                  opacity: f > 0.001 ? 1 : 0,
+                  transition: 'stroke-dashoffset .7s ease',
+                }}
+              />
+            </g>
+          )
+        })}
+
+        {/* the bridge where the road crosses the river */}
+        <g className="base-trail" style={HIDDEN}>
+          <path d={geo.bridge} fill="none" stroke="#f1f2f6" strokeWidth="44" strokeLinecap="butt" />
+          <path d={geo.bridge} fill="none" stroke="#9aa0b0" strokeWidth="38" strokeLinecap="butt" />
+          <path d={geo.bridge} fill="none" stroke="#4b4f5c" strokeWidth="29" strokeLinecap="butt" />
+        </g>
+
+        {/* white dashes down the middle of the road */}
+        <path
+          className="base-trail"
+          d={geo.d}
+          fill="none"
+          stroke="#fff"
+          strokeOpacity=".9"
+          strokeWidth="2.6"
+          strokeDasharray="9 11"
+          style={HIDDEN}
+        />
+
+        {/* round pads under the start, every stop and the goal */}
+        <g className="pop-deco" style={HIDDEN}>
+          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="40" ry="20" fill="#cfd3dc" stroke="#9aa0b0" strokeWidth="2.5" />
+          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="30" ry="15" fill="#e4e7ee" />
+        </g>
+        {geo.nodes.map((nd, k) => (
+          <g key={`pad-${k}`} className="pop-deco" style={HIDDEN}>
+            <ellipse cx={nd.x} cy={nd.y + 2} rx="30" ry="15" fill="#eceef3" stroke="#a3a8b6" strokeWidth="2" />
+          </g>
+        ))}
+        {Object.values(geo.branches).flatMap((br, k) =>
+          br.nodes.map((nd, j) => (
+            <g key={`sidepad-${k}-${j}`} className="pop-deco" style={HIDDEN}>
+              <ellipse cx={nd.x} cy={nd.y + 2} rx="24" ry="12" fill="#f3edff" stroke={SIDE} strokeWidth="2" strokeDasharray="4 3" />
+            </g>
+          ))
+        )}
+        <g className="pop-deco" style={HIDDEN}>
+          <ellipse cx={geo.end.x} cy={geo.end.y + 2} rx="40" ry="20" fill="#e6e9ef" stroke="#9aa0b0" strokeWidth="2.5" />
+        </g>
+
+        {/* preview trail: drawn once while the character flies down the route, then fades out */}
+        <path
+          ref={previewRef}
+          d={geo.d}
+          pathLength="1000"
+          fill="none"
+          stroke="#f2c230"
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="1000 2000"
+          strokeDashoffset="1000"
+          style={HIDDEN}
+        />
+
+        {/* the part already walked: drawn by anime.js */}
+        <path
+          ref={trailRef}
+          d={geo.d}
+          pathLength="1000"
+          fill="none"
+          stroke="#2f80e0"
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeDasharray="1000 2000"
+          strokeDashoffset="1000"
+          opacity="0"
+        />
+
+        {/* scenery in front of the road */}
+        {decor.front.map((it, k) => (
+          <Deco key={`f${k}`} {...it} />
+        ))}
+      </svg>
+
+      {/* small badge while the preview is playing */}
+      {previewing && (
+        <div
+          className="pointer-events-none absolute left-3 top-3 z-30 flex items-center gap-2 rounded-full bg-[#0b0b2b]/90 px-3 py-1.5 text-[11px] font-bold text-white shadow-md"
+          role="status"
+        >
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#f2c230]" aria-hidden="true" />
+          Previewing your route
+        </div>
+      )}
+
+      {/* stops, side stops, start and finish (HTML on top of the SVG so they are real buttons) */}
+      <ol className="absolute inset-0 m-0 list-none p-0">
+        {/* start */}
+        <li className="absolute h-0 w-0" style={{ left: pctX(geo, geo.start.x), top: pctY(geo, geo.start.y) }}>
+          <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
+            <div
+              className="pop-node shrink-0 rounded-full border-2 border-white bg-[#0b0b2b] px-3 py-1 text-xs font-extrabold text-white shadow-md"
+              style={HIDDEN}
+            >
+              Start
+            </div>
+          </div>
+        </li>
+
+        {/* the main steps */}
+        {mainSteps.map((it, pos) => {
+          const { i, s: step } = it
+          const node = geo.nodes[pos]
+          const checked = isDone(i)
+          const isActive = i === active
+          const onLeft = pos % 2 === 0
+          const labelBody = (
+            <>
+              <div
+                className={`line-clamp-2 text-[13px] font-extrabold leading-tight ${
+                  checked ? 'text-neutral-400 line-through' : 'text-black'
+                }`}
+              >
+                {title(step)}
+              </div>
+              {(subLine(i, step) || i === nextIdx) && (
+                <div className="mt-0.5 text-[11px] font-bold text-neutral-500">
+                  {i === nextIdx && <span className="text-[#2f80e0]">Next up</span>}
+                  {i === nextIdx && subLine(i, step) ? ' · ' : ''}
+                  {subLine(i, step)}
+                </div>
+              )}
+            </>
+          )
+          return (
+            <li key={`main-${i}`} className="absolute h-0 w-0" style={{ left: pctX(geo, node.x), top: pctY(geo, node.y) }}>
+              <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
+                <div className="pop-node step-node h-11 w-11 shrink-0" style={HIDDEN}>
+                  <button
+                    type="button"
+                    onClick={() => setFocusIdx(i)}
+                    aria-current={isActive ? 'step' : undefined}
+                    aria-label={`Step ${pos + 1}: ${title(step)}${checked ? ' (done)' : ''}`}
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-full text-sm font-extrabold shadow-md transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80e0]/40 ${
+                      checked
+                        ? 'bg-white'
+                        : isActive
+                          ? 'border-[3px] border-[#2f80e0] bg-white text-[#2f80e0]'
+                          : 'border-[3px] border-[#d9c8ae] bg-white text-neutral-500 hover:border-[#0b0b2b]'
+                    }`}
+                  >
+                    {checked ? <FaCheckCircle className="h-11 w-11 text-[#2f9e62]" aria-hidden="true" /> : pos + 1}
+                    {isActive && (
+                      <span
+                        aria-hidden="true"
+                        className="pulse-ring pointer-events-none absolute inset-0 rounded-full border-2 border-[#2f80e0]"
+                      />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {land ? (
+                /* landscape: label sits under the stop */
+                <div className="absolute left-0 top-[34px] flex w-0 justify-center">
+                  <div
+                    aria-hidden="true"
+                    onClick={() => setFocusIdx(i)}
+                    className="pop-label w-[156px] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
+                    style={HIDDEN}
+                  >
+                    {labelBody}
+                  </div>
+                </div>
+              ) : (
+                /* portrait: label beside the stop, width follows the map width so it never runs into the other side */
+                <div className="absolute top-0 flex h-0 items-center" style={onLeft ? { left: 32 } : { right: 32 }}>
+                  <div
+                    aria-hidden="true"
+                    onClick={() => setFocusIdx(i)}
+                    className={`pop-label w-[min(190px,38cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
+                      onLeft ? 'text-left' : 'text-right'
+                    }`}
+                    style={HIDDEN}
+                  >
+                    {labelBody}
+                  </div>
+                </div>
+              )}
+            </li>
+          )
+        })}
+
+        {/* optional "Optional" tags where each side path leaves the main route */}
+        {Object.entries(geo.branches).map(([m, br]) => {
+          const parent = geo.nodes[m]
+          const first = br.nodes[0]
+          return (
+            <li
+              key={`tag-${m}`}
+              className="absolute h-0 w-0"
+              style={{ left: pctX(geo, (parent.x + first.x) / 2), top: pctY(geo, (parent.y + first.y) / 2) }}
+            >
+              <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
+                <span
+                  className="pop-label shrink-0 whitespace-nowrap rounded-full border border-dashed bg-white px-2 py-0.5 text-[10px] font-extrabold"
+                  style={{ ...HIDDEN, borderColor: SIDE, color: SIDE }}
+                >
+                  Optional
+                </span>
+              </div>
+            </li>
+          )
+        })}
+
+        {/* the optional steps, each on its side path */}
+        {plan.side.flatMap((items, m) =>
+          items.map((it, j) => {
+            const { i, s: step } = it
+            const node = geo.branches[m].nodes[j]
+            const checked = isDone(i)
+            const isActive = i === active
+            const labelBody = (
+              <>
+                <div
+                  className={`line-clamp-2 text-[12px] font-extrabold leading-tight ${
+                    checked ? 'text-neutral-400 line-through' : 'text-black'
+                  }`}
+                >
+                  {title(step)}
+                </div>
+                <div className="mt-0.5 text-[10px] font-bold" style={{ color: SIDE }}>
+                  Side quest{sub(step) ? ` · ${sub(step)}` : ''}
+                </div>
+              </>
+            )
+            return (
+              <li key={`side-${i}`} className="absolute h-0 w-0" style={{ left: pctX(geo, node.x), top: pctY(geo, node.y) }}>
+                <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
+                  <div className="pop-node side-node h-10 w-10 shrink-0" style={HIDDEN}>
+                    <button
+                      type="button"
+                      onClick={() => setFocusIdx(i)}
+                      aria-current={isActive ? 'step' : undefined}
+                      aria-label={`Optional side step: ${title(step)}${checked ? ' (done)' : ''}`}
+                      className={`relative flex h-10 w-10 items-center justify-center rounded-full shadow-md transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#8b5cf6]/40 ${
+                        checked
+                          ? 'bg-white'
+                          : isActive
+                            ? 'border-[3px] border-dashed border-[#8b5cf6] bg-[#f3edff] text-[#8b5cf6]'
+                            : 'border-[3px] border-dashed border-[#cdbcf5] bg-white text-[#8b5cf6] hover:border-[#8b5cf6]'
+                      }`}
+                    >
+                      {checked ? (
+                        <FaCheckCircle className="h-10 w-10 text-[#8b5cf6]" aria-hidden="true" />
+                      ) : (
+                        <FaStar className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {isActive && (
+                        <span
+                          aria-hidden="true"
+                          className="pulse-ring pointer-events-none absolute inset-0 rounded-full border-2 border-[#8b5cf6]"
+                        />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {land ? (
+                  <div className="absolute top-0 flex h-0 items-center" style={m % 2 ? { right: 30 } : { left: 30 }}>
+                    <div
+                      aria-hidden="true"
+                      onClick={() => setFocusIdx(i)}
+                      className={`pop-label w-[128px] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
+                        m % 2 ? 'text-right' : 'text-left'
+                      }`}
+                      style={HIDDEN}
+                    >
+                      {labelBody}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute left-0 top-[26px] flex w-0 justify-center">
+                    <div
+                      aria-hidden="true"
+                      onClick={() => setFocusIdx(i)}
+                      className="pop-label w-[min(112px,28cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
+                      style={HIDDEN}
+                    >
+                      {labelBody}
+                    </div>
+                  </div>
+                )}
+              </li>
+            )
+          })
+        )}
+
+        {/* finish */}
+        <li className="absolute h-0 w-0" style={{ left: pctX(geo, geo.end.x), top: pctY(geo, geo.end.y) }}>
+          <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
+            <div className="pop-node finish-node h-14 w-14 shrink-0" style={HIDDEN}>
+              <div
+                className={`flex h-full w-full items-center justify-center rounded-full border-[3px] border-white text-xl shadow-md transition-colors duration-500 ${
+                  allDone ? 'bg-[#2f9e62] text-white' : 'bg-[#0b0b2b] text-white'
+                }`}
+              >
+                <FaFlagCheckered aria-hidden="true" />
+              </div>
+            </div>
+          </div>
+
+          <div className="absolute left-0 top-9 flex h-0 w-0 justify-center">
+            <div className="pop-label w-[200px] shrink-0 rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center" style={HIDDEN}>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">Goal</div>
+              <div className="text-sm font-extrabold leading-tight text-black">{career.title}</div>
+            </div>
+          </div>
+
+        </li>
+      </ol>
+
+      {/* the traveler: your MBTI character, walks the main route and detours onto side paths */}
+      <div
+        ref={charRef}
+        className="pointer-events-none absolute z-20 h-0 w-0"
+        style={{ left: pctX(geo, geo.start.x), top: pctY(geo, geo.start.y) }}
+        aria-hidden="true"
+      >
+        <div className="absolute bottom-[26px] left-0 w-0">
+          <div ref={bobRef} className={land ? '-ml-[44px] w-[88px]' : '-ml-[38px] w-[76px] sm:-ml-[44px] sm:w-[88px]'}>
+            {theme ? (
+              <MbtiCharacter code={pred.mbti} className="w-full drop-shadow-lg" />
+            ) : (
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#2f80e0] text-xs font-extrabold text-white shadow-lg">
+                You
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* confetti, stars and rings are added here whenever a step is finished */}
+      <div ref={fxRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-40 overflow-hidden" />
+    </div>
+  )
 
   return (
     <div className="space-y-6">
@@ -900,7 +2333,8 @@ const UserRoadMap = () => {
           <div className="min-w-0">
             <h1 className="break-words text-3xl font-black tracking-tight text-black sm:text-4xl">Roadmap: {career.title}</h1>
             <div className="mt-1 text-sm text-neutral-600">
-              {steps.length} steps
+              {mainSteps.length} steps
+              {sideTotal > 0 ? ` + ${sideTotal} optional` : ''}
               {estimatedTotal ? ` · about ${estimatedTotal.replace(/^about\s+/i, '')}` : ''}
             </div>
           </div>
@@ -910,14 +2344,20 @@ const UserRoadMap = () => {
         </div>
       </header>
 
-      {steps.length > 0 && geo && (
+      {total > 0 && geo && (
         <>
-          {/* Progress summary */}
+          {/* Progress summary: only main steps count, optional ones are bonus */}
           <Box className="!p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div className="text-2xl font-black leading-tight text-black sm:text-3xl">{progress}% of the way there</div>
               <div className="text-sm text-neutral-600">
-                {done.length} of {steps.length} steps done
+                {mainDoneCount} of {mainSteps.length} steps done
+                {sideTotal > 0 && (
+                  <span style={{ color: SIDE }} className="font-bold">
+                    {' '}
+                    · {sideDoneCount} of {sideTotal} optional
+                  </span>
+                )}
               </div>
             </div>
             <div
@@ -933,10 +2373,10 @@ const UserRoadMap = () => {
             <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <div className="min-w-0 text-sm text-neutral-600">
                 {allDone ? (
-                  <span className="font-bold text-[#2f9e62]">Every step is done. Nice work!</span>
+                  <span className="font-bold text-[#2f9e62]">Every main step is done. Nice work!</span>
                 ) : (
                   <>
-                    Next up: <span className="font-bold text-black">{text(steps[nextIdx])}</span>
+                    Next up: <span className="font-bold text-black">{nextTitle}</span>
                   </>
                 )}
               </div>
@@ -961,279 +2401,56 @@ const UserRoadMap = () => {
                   </button>
                 ))}
             </div>
+
+            {/* legend */}
+            {sideTotal > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[#e6d8c3] pt-3 text-[12px] font-bold text-neutral-600">
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-[10px] w-8 rounded-full bg-[#4b4f5c]" aria-hidden="true" />
+                  Main road
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="inline-block h-[4px] w-8 rounded-full border-t-[4px] border-dashed" style={{ borderColor: SIDE }} aria-hidden="true" />
+                  Optional side path, doesn’t block your goal
+                </span>
+              </div>
+            )}
           </Box>
 
           {/* Map + focus card.
-              Mobile: block layout, the focus card floats at the bottom of the screen while the map scrolls,
-              with a small cheering character riding above it.
-              Desktop: two columns, the focus card and the cheer card stick to the top of the right column. */}
-          <div className="space-y-4 lg:grid lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)] lg:items-start lg:gap-8 lg:space-y-0">
-            {/* THE MAP (container-type lets the stop labels size themselves from the map's own width) */}
-            <div
-              ref={mapRef}
-              className="relative mx-auto w-full max-w-[460px] overflow-hidden rounded-3xl border-2 border-[#0b0b2b] shadow-sm"
-              style={{ containerType: 'inline-size' }}
-            >
-              <svg
-                viewBox={`0 0 ${geo.W} ${geo.H}`}
-                className="block h-auto w-full"
-                role="img"
-                aria-label={`Map of your ${steps.length} steps toward becoming ${career.title}`}
-              >
-                <defs>
-                  <radialGradient id="roadmap-paper" cx="50%" cy="35%" r="80%">
-                    <stop offset="0" stopColor="#fff9ea" />
-                    <stop offset="1" stopColor="#efddbb" />
-                  </radialGradient>
-                </defs>
-
-                <rect width={geo.W} height={geo.H} fill="url(#roadmap-paper)" />
-                <rect
-                  x="10"
-                  y="10"
-                  width={geo.W - 20}
-                  height={geo.H - 20}
-                  rx="18"
-                  fill="none"
-                  stroke="#d9c8ae"
-                  strokeWidth="2"
-                  strokeDasharray="6 6"
-                />
-
-                {/* compass */}
-                <g transform="translate(342 62)" opacity="0.8">
-                  <circle r="24" fill="none" stroke="#b89d73" strokeWidth="2" />
-                  <polygon points="-20,0 0,-5 20,0 0,5" fill="#e0cfa8" />
-                  <polygon points="0,-20 5,0 0,20 -5,0" fill="#c9a56b" />
-                  <text y="-30" textAnchor="middle" fontSize="11" fontWeight="800" fill="#8a6a45">
-                    N
-                  </text>
-                </g>
-
-                {/* scenery between the stops */}
-                {geo.nodes.slice(0, -1).map((_, i) => {
-                  const y = FIRST + i * ROW + ROW / 2
-                  return (
-                    <React.Fragment key={`deco-${i}`}>
-                      <Deco type={DECO_TYPES[i % 3]} x={50} y={y} />
-                      <Deco type={DECO_TYPES[(i + 1) % 3]} x={350} y={y} />
-                    </React.Fragment>
-                  )
-                })}
-                <Deco type="tree" x={60} y={geo.end.y - 10} />
-                <Deco type="mountain" x={338} y={geo.end.y - 10} />
-
-                {/* the whole route as a dotted trail */}
-                <path
-                  className="base-trail"
-                  d={geo.d}
-                  fill="none"
-                  stroke="#b89d73"
-                  strokeWidth="5"
-                  strokeLinecap="round"
-                  strokeDasharray="1 13"
-                  style={HIDDEN}
-                />
-
-                {/* preview trail: drawn once while the character flies down the route, then fades out */}
-                <path
-                  ref={previewRef}
-                  d={geo.d}
-                  pathLength="1000"
-                  fill="none"
-                  stroke="#f2c230"
-                  strokeWidth="7"
-                  strokeLinecap="round"
-                  strokeDasharray="1000 2000"
-                  strokeDashoffset="1000"
-                  style={HIDDEN}
-                />
-
-                {/* the part already walked: drawn by anime.js */}
-                <path
-                  ref={trailRef}
-                  d={geo.d}
-                  pathLength="1000"
-                  fill="none"
-                  stroke="#2f80e0"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                  strokeDasharray="1000 2000"
-                  strokeDashoffset="1000"
-                  opacity="0"
-                />
-              </svg>
-
-              {/* small badge while the preview is playing */}
-              {previewing && (
-                <div
-                  className="pointer-events-none absolute left-3 top-3 z-30 flex items-center gap-2 rounded-full bg-[#0b0b2b]/90 px-3 py-1.5 text-[11px] font-bold text-white shadow-md"
-                  role="status"
-                >
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#f2c230]" aria-hidden="true" />
-                  Previewing your route
-                </div>
-              )}
-
-              {/* stops, start and finish (HTML on top of the SVG so they are real buttons) */}
-              <ol className="absolute inset-0 m-0 list-none p-0">
-                {/* start */}
-                <li className="absolute h-0 w-0" style={{ left: pctX(geo, geo.start.x), top: pctY(geo, geo.start.y) }}>
-                  <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
-                    <div
-                      className="pop-node shrink-0 rounded-full border-2 border-white bg-[#0b0b2b] px-3 py-1 text-xs font-extrabold text-white shadow-md"
-                      style={HIDDEN}
-                    >
-                      Start
-                    </div>
-                  </div>
-                </li>
-
-                {/* the steps */}
-                {steps.map((step, i) => {
-                  const node = geo.nodes[i]
-                  const checked = done.includes(String(i))
-                  const isActive = i === active
-                  const onLeft = i % 2 === 0
-                  return (
-                    <li
-                      key={i}
-                      className="absolute h-0 w-0"
-                      style={{ left: pctX(geo, node.x), top: pctY(geo, node.y) }}
-                    >
-                      <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
-                        <div className="pop-node step-node h-11 w-11 shrink-0" style={HIDDEN}>
-                          <button
-                            type="button"
-                            onClick={() => setFocusIdx(i)}
-                            aria-current={isActive ? 'step' : undefined}
-                            aria-label={`Step ${i + 1}: ${text(step)}${checked ? ' (done)' : ''}`}
-                            className={`relative flex h-11 w-11 items-center justify-center rounded-full text-sm font-extrabold shadow-md transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80e0]/40 ${
-                              checked
-                                ? 'bg-white'
-                                : isActive
-                                  ? 'border-[3px] border-[#2f80e0] bg-white text-[#2f80e0]'
-                                  : 'border-[3px] border-[#d9c8ae] bg-white text-neutral-500 hover:border-[#0b0b2b]'
-                            }`}
-                          >
-                            {checked ? <FaCheckCircle className="h-11 w-11 text-[#2f9e62]" aria-hidden="true" /> : i + 1}
-                            {isActive && (
-                              <span
-                                aria-hidden="true"
-                                className="pulse-ring pointer-events-none absolute inset-0 rounded-full border-2 border-[#2f80e0]"
-                              />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* label beside the stop: width follows the map width so it never runs into the other side */}
-                      <div
-                        className="absolute top-0 flex h-0 items-center"
-                        style={onLeft ? { left: 32 } : { right: 32 }}
-                      >
-                        <div
-                          aria-hidden="true"
-                          onClick={() => setFocusIdx(i)}
-                          className={`pop-label w-[min(190px,38cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
-                            onLeft ? 'text-left' : 'text-right'
-                          }`}
-                          style={HIDDEN}
-                        >
-                          <div
-                            className={`line-clamp-2 text-[13px] font-extrabold leading-tight ${
-                              checked ? 'text-neutral-400 line-through' : 'text-black'
-                            }`}
-                          >
-                            {text(step)}
-                          </div>
-                          {(sub(step) || i === nextIdx) && (
-                            <div className="mt-0.5 text-[11px] font-bold text-neutral-500">
-                              {i === nextIdx && <span className="text-[#2f80e0]">Next up</span>}
-                              {i === nextIdx && sub(step) ? ' · ' : ''}
-                              {sub(step)}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
-
-                {/* finish */}
-                <li className="absolute h-0 w-0" style={{ left: pctX(geo, geo.end.x), top: pctY(geo, geo.end.y) }}>
-                  <div className="absolute left-0 top-0 flex h-0 w-0 items-center justify-center">
-                    <div className="pop-node finish-node h-14 w-14 shrink-0" style={HIDDEN}>
-                      <div
-                        className={`flex h-full w-full items-center justify-center rounded-full border-[3px] border-white text-xl shadow-md transition-colors duration-500 ${
-                          allDone ? 'bg-[#2f9e62] text-white' : 'bg-[#0b0b2b] text-white'
-                        }`}
-                      >
-                        <FaFlagCheckered aria-hidden="true" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="absolute left-0 top-9 flex h-0 w-0 justify-center">
-                    <div className="pop-label w-[200px] shrink-0 text-center" style={HIDDEN}>
-                      <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">Goal</div>
-                      <div className="text-sm font-extrabold leading-tight text-black">{career.title}</div>
-                    </div>
-                  </div>
-
-                  {/* confetti, hidden until the last step is finished */}
-                  <div className="pointer-events-none absolute left-0 top-0 h-0 w-0" aria-hidden="true">
-                    {Array.from({ length: 16 }).map((_, k) => (
-                      <span
-                        key={k}
-                        className="confetti absolute left-0 top-0 h-2 w-2 rounded-sm"
-                        style={{ background: CONFETTI[k % CONFETTI.length], opacity: 0 }}
-                      />
-                    ))}
-                  </div>
-                </li>
-              </ol>
-
-              {/* the traveler: your MBTI character, walks along the route */}
-              <div
-                ref={charRef}
-                className="pointer-events-none absolute z-20 h-0 w-0"
-                style={{ left: pctX(geo, geo.start.x), top: pctY(geo, geo.start.y) }}
-                aria-hidden="true"
-              >
-                <div className="absolute bottom-[26px] left-0 w-0">
-                  <div ref={bobRef} className="-ml-[38px] w-[76px] sm:-ml-[44px] sm:w-[88px]">
-                    {theme ? (
-                      <MbtiCharacter code={pred.mbti} className="w-full drop-shadow-lg" />
-                    ) : (
-                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-[#2f80e0] text-xs font-extrabold text-white shadow-lg">
-                        You
-                      </div>
-                    )}
-                  </div>
-                </div>
+              Mobile: portrait island, the focus card floats at the bottom of the screen while the map scrolls.
+              Desktop: landscape island (scrolls sideways when long), focus card underneath.
+              The cheering character rides above the focus card on both. */}
+          <div className="space-y-4">
+            {land ? (
+              <div ref={stripRef} className="overflow-x-auto overflow-y-hidden rounded-3xl border-2 border-[#0b0b2b] shadow-sm">
+                {mapInner}
               </div>
-            </div>
+            ) : (
+              mapInner
+            )}
 
             {/* FOCUS CARD + CHEER CHARACTER */}
-            <aside className="sticky bottom-3 z-30 min-w-0 lg:bottom-auto lg:top-6">
-              {/* mobile: small character floating above the focus card, follows you as you scroll */}
-              {theme && !isDesktop && (
+            <aside className="sticky bottom-3 z-30 min-w-0">
+              {theme && (
                 <MiniCheer
                   code={pred.mbti}
                   theme={theme}
                   progress={progress}
                   allDone={allDone}
                   celebrate={celebrate}
-                  nextTitle={nextIdx >= 0 ? text(steps[nextIdx]) : ''}
+                  nextTitle={nextTitle}
+                  hasSide={activeIsSide}
+                  big={isDesktop}
                 />
               )}
 
-              <div className="space-y-4">
-                <div
-                  className="max-h-[50vh] overflow-y-auto rounded-2xl border-2 border-[#0b0b2b] bg-white p-4 shadow-lg sm:p-5 lg:max-h-none"
-                  aria-live="polite"
-                >
+              <div
+                className="max-h-[50vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:p-5 lg:grid lg:max-h-none lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
+                style={{ borderColor: activeIsSide ? SIDE : '#0b0b2b' }}
+                aria-live="polite"
+              >
+                <div className="min-w-0">
                   {theme && (
                     <div className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: theme.dark }}>
                       {String(pred.mbti).toUpperCase()} · {theme.name}
@@ -1241,9 +2458,15 @@ const UserRoadMap = () => {
                   )}
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-bold text-neutral-500">
-                      Step {active + 1} of {steps.length}
-                    </span>
+                    {activeIsSide ? (
+                      <span className="rounded-full px-3 py-1 text-xs font-extrabold text-white" style={{ backgroundColor: SIDE }}>
+                        Optional side quest
+                      </span>
+                    ) : (
+                      <span className="text-sm font-bold text-neutral-500">
+                        Step {(activeWhere?.m ?? 0) + 1} of {mainSteps.length}
+                      </span>
+                    )}
                     {activeDone ? (
                       <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-extrabold text-[#2f9e62]">Done</span>
                     ) : active === nextIdx ? (
@@ -1252,6 +2475,14 @@ const UserRoadMap = () => {
                     {sub(activeStep) && (
                       <span className="rounded-full bg-[#f3e6d3] px-3 py-1 text-xs font-bold text-neutral-700">{sub(activeStep)}</span>
                     )}
+                    {plan.all[active]?.phase && (
+                      <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
+                    )}
+                    {plan.alongside[active] && (
+                      <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
+                        Alongside step {plan.alongside[active]}
+                      </span>
+                    )}
                   </div>
 
                   <div
@@ -1259,20 +2490,28 @@ const UserRoadMap = () => {
                       activeDone ? 'text-neutral-400 line-through' : 'text-black'
                     }`}
                   >
-                    {text(activeStep)}
+                    {title(activeStep)}
                   </div>
 
                   {detail(activeStep) && (
                     <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
                   )}
 
-                  <details className="group mt-3">
+                  {activeIsSide && (
+                    <div className="mt-2 text-sm font-bold" style={{ color: SIDE }}>
+                      Extra credit. It won’t count toward your progress.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
+                  <details className="group">
                     <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-bold text-[#0b0b2b] [&::-webkit-details-marker]:hidden">
                       Find courses for this step
                       <Chevron className="!h-4 !w-4" />
                     </summary>
                     <div className="mt-2">
-                      <CourseLinks topic={text(activeStep)} />
+                      <CourseLinks topic={title(activeStep)} />
                     </div>
                   </details>
 
@@ -1302,7 +2541,7 @@ const UserRoadMap = () => {
                       <button
                         type="button"
                         onClick={() => goTo(active + 1)}
-                        disabled={active === steps.length - 1}
+                        disabled={active === total - 1}
                         aria-label="Next step"
                         className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
                       >
@@ -1311,31 +2550,100 @@ const UserRoadMap = () => {
                     </div>
                   </div>
                 </div>
-
-                {/* desktop: your character greets you, then cheers you on in the empty side space */}
-                {theme && isDesktop && (
-                  <CheerCard
-                    code={pred.mbti}
-                    theme={theme}
-                    progress={progress}
-                    allDone={allDone}
-                    celebrate={celebrate}
-                    nextTitle={nextIdx >= 0 ? text(steps[nextIdx]) : ''}
-                  />
-                )}
               </div>
             </aside>
           </div>
         </>
       )}
 
-      {/* Skills check: two cards, course links tucked away */}
+      {/* Learning resources: every block spans the full width and its tiles share the row evenly */}
+      <section>
+        <h2 className="text-xl font-extrabold text-black">Learning resources</h2>
+        <div className="text-sm text-neutral-500">Courses for {career.title} and the skills it uses</div>
+
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-col gap-4 rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <Label>Find courses</Label>
+              <div className="mt-1 text-sm text-neutral-600">
+                These links open search results on each platform, so you can compare and pick.
+              </div>
+            </div>
+            <div className="shrink-0">
+              <CourseLinks topic={career.title ?? ''} />
+            </div>
+          </div>
+
+          {!need.length && courseSkills.length > 0 && (
+            <div className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
+              <Label>Skills this career uses</Label>
+              <div className="mt-3 grid gap-3" style={fit(290)}>
+                {courseSkills.map((skill) => (
+                  <SkillRow key={skill} skill={skill} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {(() => {
+            const groups = [
+              // technical and other skills are shown together as one group
+              { label: 'Technical & other', items: uniq([...technical, ...other]), bg: 'bg-[#eaf1fc]', chip: 'border-[#c6dbf6]', ink: 'text-[#2f80e0]' },
+              { label: 'Soft skills', items: soft, bg: 'bg-[#eaf6ef]', chip: 'border-[#bfe3cd]', ink: 'text-[#2f9e62]' },
+            ].filter((g) => g.items.some((x) => chipText(x)))
+            return groups.length > 0 ? (
+              <div className="grid gap-4" style={fit(260)}>
+                {groups.map((g) => (
+                  <div key={g.label} className={`rounded-3xl p-5 ${g.bg}`}>
+                    <Label cls={g.ink}>{g.label}</Label>
+                    <Chips items={g.items} cls={g.chip} />
+                  </div>
+                ))}
+              </div>
+            ) : null
+          })()}
+
+          {hasEdu && (
+            <div className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
+              <Label>Education and certificates</Label>
+              <div className="mt-3 grid gap-4" style={fit(230)}>
+                {roadmap.education?.typical && (
+                  <div className="rounded-2xl bg-[#0b0b2b] p-4 text-white">
+                    <div className="text-xs font-bold uppercase tracking-wide text-white/60">Typical education</div>
+                    <div className="mt-1 text-lg font-extrabold leading-snug">{text(roadmap.education.typical)}</div>
+                  </div>
+                )}
+                {programs.some((x) => chipText(x)) && (
+                  <div>
+                    <Label>Related programs</Label>
+                    <Chips items={programs} />
+                  </div>
+                )}
+                {reported.some((x) => chipText(x)) && (
+                  <div>
+                    <Label>Reported by people in this job</Label>
+                    <Chips items={reported} />
+                  </div>
+                )}
+                {certificates.some((x) => chipText(x)) && (
+                  <div>
+                    <Label cls="text-[#8b5cf6]">Certificates</Label>
+                    <Chips items={certificates} cls="border-[#d9ccfa]" />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Skills check */}
       {(have.length > 0 || need.length > 0) && (
         <section>
           <h2 className="text-xl font-extrabold text-black">Skills check</h2>
           <div className="text-sm text-neutral-500">Based on the skills you entered in this prediction</div>
 
-          <div className="mt-4 grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+          <div className="mt-4 space-y-4">
             <div className="rounded-3xl bg-[#eaf6ef] p-5">
               <Label cls="text-[#2f9e62]">You already have</Label>
               {have.length ? (
@@ -1348,7 +2656,7 @@ const UserRoadMap = () => {
             <div className="rounded-3xl bg-[#fcecec] p-5">
               <Label cls="text-[#e0404a]">Still to build</Label>
               {need.length ? (
-                <div className="mt-3">
+                <div className="mt-3 grid gap-3" style={fit(290)}>
                   {need.map((skill) => (
                     <SkillRow key={skill} skill={skill} />
                   ))}
@@ -1361,78 +2669,6 @@ const UserRoadMap = () => {
         </section>
       )}
 
-      {/* Merged learning resources + education */}
-      <Box className="py-2">
-        <Acc title="Learning resources" hint={`Courses for ${career.title} and the skills it uses`}>
-          <div className="text-sm text-neutral-500">These links open search results on each platform, so you can compare and pick.</div>
-          <CourseLinks topic={career.title ?? ''} />
-
-          {!need.length && courseSkills.length > 0 && (
-            <div className="space-y-3 border-t border-[#e6d8c3] pt-4">
-              <Label>Skills this career uses</Label>
-              {courseSkills.map((skill) => (
-                <div key={skill} className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-                  <span className="text-sm font-extrabold text-black">{skill}</span>
-                  <CourseLinks topic={skill} />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {(technical.length > 0 || soft.length > 0 || other.length > 0) && (
-            <div className="space-y-3 border-t border-[#e6d8c3] pt-4">
-              {technical.length > 0 && (
-                <div>
-                  <Label>Technical</Label>
-                  <Chips items={technical} />
-                </div>
-              )}
-              {soft.length > 0 && (
-                <div>
-                  <Label>Soft skills</Label>
-                  <Chips items={soft} />
-                </div>
-              )}
-              {other.length > 0 && (
-                <div>
-                  <Label>Other</Label>
-                  <Chips items={other} />
-                </div>
-              )}
-            </div>
-          )}
-        </Acc>
-
-        {hasEdu && (
-          <Acc title="Education and certificates" hint="Typical education, related programs and certificates">
-            {roadmap.education?.typical && (
-              <div>
-                <Label>Typical education</Label>
-                <div className="mt-1 text-base font-semibold text-neutral-800">{text(roadmap.education.typical)}</div>
-              </div>
-            )}
-            {programs.length > 0 && (
-              <div>
-                <Label>Related programs</Label>
-                <Chips items={programs} />
-              </div>
-            )}
-            {reported.length > 0 && (
-              <div>
-                <Label>Reported by people in this job</Label>
-                <Chips items={reported} />
-              </div>
-            )}
-            {certificates.length > 0 && (
-              <div>
-                <Label>Certificates</Label>
-                <Chips items={certificates} />
-              </div>
-            )}
-          </Acc>
-        )}
-      </Box>
-
       {roadmap.note && <div className="text-sm leading-relaxed text-neutral-500">{text(roadmap.note)}</div>}
 
       <div className="flex flex-wrap items-center gap-3 pb-4">
@@ -1443,7 +2679,7 @@ const UserRoadMap = () => {
           Choose a different career
         </Link>
         <Link
-          to="/assessment"
+          to="/assessment-test"
           className="rounded-full bg-[#0b0b2b] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a]"
         >
           + New prediction

@@ -68,6 +68,12 @@ const Label = ({ children, className = 'text-neutral-500' }) => (
   <div className={`text-xs font-bold uppercase tracking-wide ${className}`}>{children}</div>
 )
 
+const SKILL_TABS = [
+  ['technical', 'Technical'],
+  ['other', 'Other'],
+  ['soft', 'Soft'],
+]
+
 const Chips = ({ items, className = '' }) => (
   <ul className="mt-2 flex flex-wrap gap-2">
     {items.map((item, index) => (
@@ -87,6 +93,7 @@ const UserDashboard = () => {
   const [road, setRoad] = useState(null)
   const [done, setDone] = useState([])
   const [focus, setFocus] = useState(0)
+  const [skillTab, setSkillTab] = useState('technical')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -183,8 +190,13 @@ const UserDashboard = () => {
   const fallbackReason =
     str(currentCareer?.why) || str(currentCareer?.reason) || str(currentCareer?.description)
 
-  const have = list(currentCareer?.skillsHave)
-  const need = list(currentCareer?.skillsToBuild)
+  const groups = currentCareer?.skills
+  const tabs = groups
+    ? SKILL_TABS.filter(([key]) => list(groups[key]?.have).length + list(groups[key]?.need).length > 0)
+    : []
+  const activeSkillTab = tabs.find(([key]) => key === skillTab)?.[0] ?? tabs[0]?.[0]
+  const have = tabs.length ? list(groups[activeSkillTab]?.have) : list(currentCareer?.skillsHave)
+  const need = tabs.length ? list(groups[activeSkillTab]?.need) : list(currentCareer?.skillsToBuild)
 
   const steps = hasRoad ? list(road?.roadmap?.timeline?.steps) : []
   const completedCount = done.length
@@ -443,6 +455,32 @@ const UserDashboard = () => {
                       </div>
 
                       {/* Skills as tinted blocks */}
+                      {tabs.length > 1 && (
+                        <div className="mt-6 flex flex-wrap items-center gap-2" role="tablist" aria-label="Skill type">
+                          {tabs.map(([key, label]) => {
+                            const g = groups[key]
+                            const total = list(g.have).length + list(g.need).length
+                            const on = key === activeSkillTab
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                role="tab"
+                                aria-selected={on}
+                                onClick={() => setSkillTab(key)}
+                                className={`rounded-full border px-4 py-1.5 text-xs font-bold transition ${
+                                  on
+                                    ? 'border-[#0b0b2b] bg-[#0b0b2b] text-white'
+                                    : 'border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
+                                }`}
+                              >
+                                {label} <span className="opacity-70">{list(g.have).length}/{total}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+
                       {have.length + need.length > 0 && (
                         <div className="mt-6">
                           <div className="flex items-baseline justify-between gap-3">

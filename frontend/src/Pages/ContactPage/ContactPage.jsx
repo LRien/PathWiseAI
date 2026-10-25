@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
+import { sendContactMessage } from '../api/contact' // adjust path to wherever your api folder is
 
 const CONTACT_EMAIL = 'careermatchpathwiseai@gmail.com'
-const SUBMIT_URL = `https://formsubmit.co/ajax/${CONTACT_EMAIL}`
 
 const INFO = [
   { label: 'EMAIL', value: CONTACT_EMAIL },
@@ -14,6 +14,7 @@ const EMPTY = { firstName: '', lastName: '', email: '', subject: '', message: ''
 const ContactPage = () => {
   const [form, setForm] = useState(EMPTY)
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
+  const [errorMsg, setErrorMsg] = useState('')
 
   const onChange = (e) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
@@ -24,29 +25,22 @@ const ContactPage = () => {
     e.preventDefault()
 
     // Honeypot: bots fill hidden fields, real users don't
-    if (e.target.elements._honey?.value) return
+    const honey = e.target.elements._honey?.value || ''
 
     setStatus('sending')
+    setErrorMsg('')
     try {
-      const res = await fetch(SUBMIT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          name: `${form.firstName} ${form.lastName}`.trim(),
-          email: form.email, // used as the reply-to address
-          subject: form.subject,
-          message: form.message,
-          _subject: `[Career Match] ${form.subject}`,
-          _template: 'table',
-          _captcha: 'false',
-        }),
+      await sendContactMessage({
+        name: `${form.firstName} ${form.lastName}`.trim(),
+        email: form.email,
+        subject: form.subject,
+        message: form.message,
+        _honey: honey,
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data.success === 'false' || data.success === false) throw new Error('Failed')
-
       setForm(EMPTY)
       setStatus('sent')
-    } catch {
+    } catch (err) {
+      setErrorMsg(err.message)
       setStatus('error')
     }
   }
@@ -165,7 +159,7 @@ const ContactPage = () => {
 
           {status === 'error' && (
             <p className="contact__success contact__error" role="alert" style={{ color: '#c0392b' }}>
-              Something went wrong. Please try again or email us at {CONTACT_EMAIL}.
+              {errorMsg || 'Something went wrong.'} You can also email us at {CONTACT_EMAIL}.
             </p>
           )}
 

@@ -576,6 +576,14 @@ const AssesmentTest = () => {
   const valid = done[0] && done[1] && done[2]
   const missing = [!done[0] && 'personality', !done[1] && 'degree', !done[2] && 'skills'].filter(Boolean)
 
+  /* Enter inside a text input should not submit the form; only the Start Assessment button does.
+     The textarea still allows new lines, and buttons keep working with Enter/Space. */
+  const blockEnterSubmit = (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault()
+    }
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     if (!valid || submitting) return
@@ -660,7 +668,7 @@ const AssesmentTest = () => {
 
   return (
     <main className="min-h-screen bg-[#f3e7d6] px-4 pb-16 pt-10 text-neutral-900 sm:pt-14">
-      <form onSubmit={submit} className="mx-auto w-full max-w-3xl">
+      <form onSubmit={submit} onKeyDown={blockEnterSubmit} className="mx-auto w-full max-w-3xl">
         <header>
           <button
             type="button"

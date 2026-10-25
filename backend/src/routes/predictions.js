@@ -51,20 +51,37 @@ const skillName = (s) => (typeof s === 'string' ? s : s?.name ?? s?.title ?? s?.
 const skillNames = (v) =>
   (Array.isArray(v) ? v : []).map(skillName).map((s) => String(s).trim()).filter(Boolean)
 
-function technicalSkillSplit(c, userSkills) {
-  const technical = [...new Set(skillNames(one(c.career_roadmaps)?.technical_skills))]
+// technical / other / soft skills of a career, each split into "have" and "need"
+const SKILL_GROUPS = [
+  ['technical', 'technical_skills'],
+  ['other', 'other_skills'],
+  ['soft', 'soft_skills'],
+]
 
-  if (!technical.length) {
-    return { have: c.skills_have, need: c.skills_to_build, fromRoadmap: false }
-  }
-
+function skillGroupsFor(c, userSkills) {
+  const roadmap = one(c.career_roadmaps)
   const known = new Set([...skillNames(c.skills_have), ...skillNames(userSkills)].map(norm))
+  const groups = {}
 
-  return {
-    have: technical.filter((s) => known.has(norm(s))),
-    need: technical.filter((s) => !known.has(norm(s))),
-    fromRoadmap: true,
+  for (const [key, column] of SKILL_GROUPS) {
+    const all = [...new Set(skillNames(roadmap?.[column]))]
+    groups[key] = {
+      have: all.filter((s) => known.has(norm(s))),
+      need: all.filter((s) => !known.has(norm(s))),
+    }
   }
+  return groups
+}
+
+function technicalSkillSplit(c, userSkills) {
+  const groups = skillGroupsFor(c, userSkills)
+  const t = groups.technical
+
+  // No technical skills saved for this career: fall back to the old saved lists
+  if (!t.have.length && !t.need.length) {
+    return { have: c.skills_have, need: c.skills_to_build, fromRoadmap: false, groups }
+  }
+  return { have: t.have, need: t.need, fromRoadmap: true, groups }
 }
 
 // The "Why this fits" lines that list skills are rewritten so they match the chips
@@ -92,7 +109,7 @@ async function sendPrediction(req, res, id) {
       `id, selected_career, created_at,
        assessments(mbti, degree_program, skills, career_preference),
        prediction_results(personality, preference_note, disclaimer),
-       recommended_careers(rank, code, title, match_percent, description, why, reasons, skills_have, skills_to_build, career_roadmaps(id, technical_skills)),
+       recommended_careers(rank, code, title, match_percent, description, why, reasons, skills_have, skills_to_build, career_roadmaps(id, soft_skills, other_skills, technical_skills)),
        avoid_careers(rank, code, title, description, why, reasons)`
     )
     .eq('id', id)
@@ -148,6 +165,7 @@ async function sendPrediction(req, res, id) {
             : c.reasons,
           skillsHave: skills.have,
           skillsToBuild: skills.need,
+          skills: skills.groups,
           hasRoadmap: Boolean(one(c.career_roadmaps)),
         }
       }),
