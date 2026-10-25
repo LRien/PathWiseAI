@@ -81,21 +81,6 @@ const Chips = ({ items, className = '' }) => (
   </ul>
 )
 
-const Chevron = () => (
-  <svg
-    viewBox="0 0 24 24"
-    className="h-4 w-4 shrink-0 text-neutral-500 transition group-open:rotate-180"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-)
-
 const UserDashboard = () => {
   const [data, setData] = useState(null)
   const [pred, setPred] = useState(null)
@@ -193,40 +178,6 @@ const UserDashboard = () => {
   const mbti = pred?.mbti ?? data?.predictions?.[0]?.mbti
   const theme = mbtiTheme(mbti)
 
-  const inputs = pred?.inputs ?? pred?.input ?? pred?.profile ?? {}
-
-  const preferredCareer =
-    inputs?.preferredCareer ??
-    inputs?.preferred_career ??
-    inputs?.careerPreference ??
-    inputs?.career_preference ??
-    pred?.preferredCareer ??
-    pred?.preferred_career ??
-    ''
-
-  const inputSkills = list(
-    inputs?.skills ?? inputs?.Skills ?? pred?.skills ?? pred?.userSkills ?? pred?.user_skills
-  )
-
-  const inputDescription =
-    inputs?.description ??
-    inputs?.selfDescription ??
-    inputs?.self_description ??
-    inputs?.about ??
-    pred?.description ??
-    pred?.selfDescription ??
-    pred?.self_description ??
-    ''
-
-  const profileSkills = [
-    ...new Set([
-      ...inputSkills.map(text).filter(Boolean),
-      ...list(inputs?.certifications).map(text).filter(Boolean),
-    ]),
-  ]
-
-  const hasInputs = Boolean(preferredCareer || inputDescription || profileSkills.length)
-
   const reasons = list(currentCareer?.reasons ?? currentCareer?.whyFit).map(text).filter(Boolean)
 
   const fallbackReason =
@@ -244,7 +195,7 @@ const UserDashboard = () => {
   const nextIndex = steps.findIndex((_, index) => !done.includes(String(index)))
   const nextStep = nextIndex >= 0 ? text(steps[nextIndex]) : 'All steps completed. Nice work!'
 
-  const avoid = list(pred?.avoid ?? pred?.careersToAvoid ?? pred?.avoidCareers)
+  const avoid = list(pred?.avoid ?? pred?.careersToAvoid ?? pred?.avoidCareers).slice(0, 3)
 
   const predictionNumber =
     pred?.predictionNumber ?? pred?.prediction_number ?? pred?.number ?? ''
@@ -298,9 +249,9 @@ const UserDashboard = () => {
         {data && !data?.predictions?.length && (
           <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-8 text-center">
             <h2 className="text-xl font-extrabold text-black">No predictions yet</h2>
-            <p className="mt-2 text-sm text-neutral-600">
+            <div className="mt-2 text-sm text-neutral-600">
               Complete your assessment to see your top career matches.
-            </p>
+            </div>
             <Link
               to="/assessment-test"
               className="mt-5 inline-flex rounded-full bg-[#0b0b2b] px-6 py-3 text-xs font-bold uppercase text-white transition hover:bg-[#1a1a4a]"
@@ -311,318 +262,285 @@ const UserDashboard = () => {
         )}
 
         {pred && (
-          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-            {/* LEFT: sticky profile column */}
-            <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-6">
-              <section
-                className="rounded-3xl p-5 shadow-sm"
-                style={{ background: theme?.tint ?? '#cde6f6' }}
-              >
-                <div className="flex flex-col items-center gap-3 text-center">
-                  {theme && (
-                    <div className="w-56 shrink-0 sm:w-64 lg:w-40">
-                      <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />
-                    </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <h2
-                      className="text-4xl font-black leading-none tracking-tight"
-                      style={{ color: theme?.dark ?? '#245f8a' }}
-                    >
-                      {mbti ? String(mbti).toUpperCase() : 'N/A'}
-                    </h2>
-                    {theme?.name && (
-                      <div className="mt-1 text-base font-extrabold text-black">{theme.name}</div>
+          <>
+            {/* Both columns stretch to the same height, so there is no dead space */}
+            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+              {/* LEFT: profile + roadmap progress */}
+              <aside className="flex min-w-0 flex-col gap-4">
+                <section
+                  className="flex flex-1 flex-col justify-center rounded-3xl p-5 shadow-sm"
+                  style={{ background: theme?.tint ?? '#cde6f6' }}
+                >
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    {theme && (
+                      <div className="w-56 shrink-0 sm:w-64 lg:w-40">
+                        <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />
+                      </div>
                     )}
-                  </div>
-                </div>
 
-                {theme?.blurb && (
-                  <p className="mt-4 text-sm leading-relaxed text-neutral-800">{theme.blurb}</p>
-                )}
-
-                {hasInputs && (
-                  <details className="group mt-4 border-t border-white/70 pt-3">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-bold text-[#245f8a] [&::-webkit-details-marker]:hidden">
-                      Inputs used
-                      <Chevron />
-                    </summary>
-
-                    <div className="mt-3 space-y-2">
-                      {preferredCareer && (
-                        <p className="break-words text-sm leading-relaxed text-neutral-800">
-                          <span className="font-semibold">Preferred career:</span>{' '}
-                          {text(preferredCareer)}
-                        </p>
-                      )}
-                      {inputDescription && (
-                        <p className="break-words text-sm leading-relaxed text-neutral-800">
-                          {text(inputDescription)}
-                        </p>
-                      )}
-                      {profileSkills.length > 0 && (
-                        <Chips items={profileSkills} className="border-white/80" />
+                    <div className="min-w-0">
+                      <h2
+                        className="text-4xl font-black leading-none tracking-tight"
+                        style={{ color: theme?.dark ?? '#245f8a' }}
+                      >
+                        {mbti ? String(mbti).toUpperCase() : 'N/A'}
+                      </h2>
+                      {theme?.name && (
+                        <div className="mt-1 text-base font-extrabold text-black">{theme.name}</div>
                       )}
                     </div>
-                  </details>
-                )}
-              </section>
+                  </div>
 
-              {/* Roadmap progress card */}
-              <section className="rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm">
-                <Label className="text-[#8fb8ff]">Your roadmap</Label>
+                  {theme?.blurb && (
+                    <div className="mt-4 text-sm leading-relaxed text-neutral-800">{theme.blurb}</div>
+                  )}
+                </section>
 
-                {hasRoad ? (
-                  <>
-                    <h3 className="mt-1 break-words text-lg font-extrabold leading-snug">
-                      {road.career.title}
-                    </h3>
+                {/* Roadmap progress card */}
+                <section className="rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm">
+                  <Label className="text-[#8fb8ff]">Your roadmap</Label>
 
-                    <div className="mt-4 flex items-center gap-3">
-                      <div
-                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
-                        style={{
-                          background: `conic-gradient(#5aa9ff ${progress * 3.6}deg, rgba(255,255,255,.16) 0deg)`,
-                        }}
-                      >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0b0b2b] text-xs font-extrabold">
-                          {progress}%
+                  {hasRoad ? (
+                    <>
+                      <h3 className="mt-1 break-words text-lg font-extrabold leading-snug">
+                        {road.career.title}
+                      </h3>
+
+                      <div className="mt-4 flex items-center gap-3">
+                        <div
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
+                          style={{
+                            background: `conic-gradient(#5aa9ff ${progress * 3.6}deg, rgba(255,255,255,.16) 0deg)`,
+                          }}
+                        >
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0b0b2b] text-xs font-extrabold">
+                            {progress}%
+                          </div>
+                        </div>
+
+                        <div className="min-w-0 text-sm font-bold leading-snug">
+                          {completedCount} of {steps.length} steps done
                         </div>
                       </div>
 
-                      <div className="min-w-0 text-sm font-bold leading-snug">
-                        {completedCount} of {steps.length} steps done
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-2xl bg-white/10 p-3">
-                      <Label className="text-white/60">Next up</Label>
-                      <p className="mt-1 break-words text-sm leading-relaxed">{nextStep}</p>
-                    </div>
-
-                    <Link
-                      to="/dashboard/roadmap"
-                      state={{ predictionId: pred.id }}
-                      className="mt-4 flex w-full items-center justify-center rounded-full bg-white px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-[#0b0b2b] transition hover:bg-[#e8e8ff]"
-                    >
-                      View roadmap →
-                    </Link>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm leading-relaxed text-white/70">
-                    Select a career on the right to unlock your step-by-step roadmap.
-                  </p>
-                )}
-              </section>
-            </aside>
-
-            {/* RIGHT: careers, details, avoid */}
-            <div className="min-w-0 space-y-4">
-              {top.length > 0 && currentCareer ? (
-                <div className="min-w-0">
-                  {/* Folder tabs */}
-                  <div
-                    role="tablist"
-                    aria-label="Top 3 careers"
-                    className="grid grid-cols-3 gap-1.5 sm:gap-2"
-                  >
-                    {top.map((career, index) => {
-                      const active = focus === index
-                      return (
-                        <button
-                          key={`${career.title}-${index}`}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => setFocus(index)}
-                          className={`relative flex min-w-0 flex-col gap-1 rounded-t-2xl border-2 border-b-0 border-[#0b0b2b] px-3 pb-2 pt-3 text-left transition sm:px-4 ${
-                            active
-                              ? 'z-10 -mb-[2px] bg-white'
-                              : 'mt-2 bg-[#fff4b8] hover:bg-[#ffee94]'
-                          }`}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className="h-1.5 w-10 rounded-full"
-                            style={{ background: RANK_COLORS[index] }}
-                          />
-
-                          <span className="line-clamp-2 break-words text-xs font-extrabold leading-tight text-black sm:text-sm">
-                            {career.title}
-                          </span>
-
-                          <span className="flex items-center gap-2">
-                            <span className="text-sm font-black text-black">{pct(career)}%</span>
-                            {selectedTitle === career.title && (
-                              <span className="text-[10px] font-bold text-[#2f9e62] sm:text-xs">
-                                Selected ✓
-                              </span>
-                            )}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Folder body */}
-                  <section
-                    role="tabpanel"
-                    className={`relative min-w-0 rounded-bl-3xl rounded-br-3xl border-2 border-[#0b0b2b] bg-white p-5 shadow-sm sm:p-6 ${
-                      focus === 0 ? 'rounded-tl-none' : 'rounded-tl-3xl'
-                    } ${focus === top.length - 1 ? 'rounded-tr-none' : 'rounded-tr-3xl'}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <RankBadge index={focus} />
-                        <h3 className="break-words text-xl font-extrabold leading-tight text-black sm:text-2xl">
-                          {currentCareer.title}
-                        </h3>
-                      </div>
-                      <span className="shrink-0 text-2xl font-black leading-none text-black sm:text-3xl">
-                        {pct(currentCareer)}%
-                      </span>
-                    </div>
-
-                    <div className="mt-4">
-                      <MatchBar value={pct(currentCareer)} color={RANK_COLORS[focus]} />
-                    </div>
-
-                    <div className="mt-5">
-                      <Label className="text-[#2f80e0]">Why this fits</Label>
-
-                      {reasons.length > 0 ? (
-                        <ul className="mt-2 grid gap-x-6 gap-y-3 sm:grid-cols-2">
-                          {reasons.map((reason, index) => (
-                            <li
-                              key={`${reason}-${index}`}
-                              className="flex min-w-0 gap-2 text-sm leading-relaxed text-neutral-700"
-                            >
-                              <Check />
-                              <span className="min-w-0 break-words">{reason}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : fallbackReason ? (
-                        <p className="mt-2 text-sm leading-relaxed text-neutral-700">
-                          {fallbackReason}
-                        </p>
-                      ) : (
-                        <p className="mt-2 text-sm leading-relaxed text-neutral-500">
-                          This recommendation is based on your assessment profile and career-match
-                          score.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Skills as tinted blocks */}
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                      <div className="min-w-0 rounded-2xl bg-[#eaf6ef] p-4">
-                        <Label className="text-[#2f9e62]">You already have</Label>
-                        {have.length > 0 ? (
-                          <Chips items={have} className="border-[#bfe3cd]" />
-                        ) : (
-                          <p className="mt-2 text-sm text-neutral-600">
-                            No matching skills recorded yet.
-                          </p>
-                        )}
+                      <div className="mt-4 rounded-2xl bg-white/10 p-3">
+                        <Label className="text-white/60">Next up</Label>
+                        <div className="mt-1 break-words text-sm leading-relaxed">{nextStep}</div>
                       </div>
 
-                      <div className="min-w-0 rounded-2xl bg-[#fcecec] p-4">
-                        <Label className="text-[#e0404a]">Still to build</Label>
-                        {need.length > 0 ? (
-                          <Chips items={need} className="border-[#f0c4c7]" />
-                        ) : (
-                          <p className="mt-2 text-sm text-neutral-600">
-                            You cover all listed key skills.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
-                      <button
-                        type="button"
-                        onClick={() => chooseCareer(currentCareer)}
-                        disabled={busy || isSelected}
-                        className={`rounded-full px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white transition ${
-                          isSelected
-                            ? 'cursor-default bg-[#6d6d80]'
-                            : 'bg-[#0b0b2b] hover:bg-[#1a1a4a]'
-                        } disabled:opacity-70`}
+                      <Link
+                        to="/dashboard/roadmap"
+                        state={{ predictionId: pred.id }}
+                        className="mt-4 flex w-full items-center justify-center rounded-full bg-white px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-[#0b0b2b] transition hover:bg-[#e8e8ff]"
                       >
-                        {isSelected ? 'Selected ✓' : busy ? 'Saving...' : 'Select this career'}
-                      </button>
+                        View roadmap →
+                      </Link>
+                    </>
+                  ) : (
+                    <div className="mt-2 text-sm leading-relaxed text-white/70">
+                      Select a career on the right to unlock your step-by-step roadmap.
+                    </div>
+                  )}
+                </section>
+              </aside>
+
+              {/* RIGHT: careers */}
+              <div className="flex min-w-0 flex-col">
+                {top.length > 0 && currentCareer ? (
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    {/* Folder tabs */}
+                    <div
+                      role="tablist"
+                      aria-label="Top 3 careers"
+                      className="grid grid-cols-3 gap-1.5 sm:gap-2"
+                    >
+                      {top.map((career, index) => {
+                        const active = focus === index
+                        return (
+                          <button
+                            key={`${career.title}-${index}`}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            onClick={() => setFocus(index)}
+                            className={`relative flex min-w-0 flex-col gap-1 rounded-t-2xl border-2 border-b-0 border-[#0b0b2b] px-3 pb-2 pt-3 text-left transition sm:px-4 ${
+                              active
+                                ? 'z-10 -mb-[2px] bg-white'
+                                : 'mt-2 bg-[#fff4b8] hover:bg-[#ffee94]'
+                            }`}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="h-1.5 w-10 rounded-full"
+                              style={{ background: RANK_COLORS[index] }}
+                            />
+
+                            <span className="line-clamp-2 break-words text-xs font-extrabold leading-tight text-black sm:text-sm">
+                              {career.title}
+                            </span>
+
+                            <span className="flex items-center gap-2">
+                              <span className="text-sm font-black text-black">{pct(career)}%</span>
+                              {selectedTitle === career.title && (
+                                <span className="text-[10px] font-bold text-[#2f9e62] sm:text-xs">
+                                  Selected ✓
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Folder body */}
+                    <section
+                      role="tabpanel"
+                      className={`relative flex min-w-0 flex-1 flex-col rounded-bl-3xl rounded-br-3xl border-2 border-[#0b0b2b] bg-white p-5 shadow-sm sm:p-6 ${
+                        focus === 0 ? 'rounded-tl-none' : 'rounded-tl-3xl'
+                      } ${focus === top.length - 1 ? 'rounded-tr-none' : 'rounded-tr-3xl'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <RankBadge index={focus} />
+                          <h3 className="break-words text-xl font-extrabold leading-tight text-black sm:text-2xl">
+                            {currentCareer.title}
+                          </h3>
+                        </div>
+                        <span className="shrink-0 text-2xl font-black leading-none text-black sm:text-3xl">
+                          {pct(currentCareer)}%
+                        </span>
+                      </div>
+
+                      <div className="mt-4">
+                        <MatchBar value={pct(currentCareer)} color={RANK_COLORS[focus]} />
+                      </div>
+
+                      <div className="mt-5">
+                        <Label className="text-[#2f80e0]">Why this fits</Label>
+
+                        {reasons.length > 0 ? (
+                          <ul className="mt-2 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                            {reasons.map((reason, index) => (
+                              <li
+                                key={`${reason}-${index}`}
+                                className="flex min-w-0 gap-2 text-sm leading-relaxed text-neutral-700"
+                              >
+                                <Check />
+                                <span className="min-w-0 break-words">{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : fallbackReason ? (
+                          <div className="mt-2 text-sm leading-relaxed text-neutral-700">
+                            {fallbackReason}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-sm leading-relaxed text-neutral-500">
+                            This recommendation is based on your assessment profile and
+                            career-match score.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Skills as tinted blocks */}
+                      {have.length + need.length > 0 && (
+                        <div className="mt-6">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <Label>Skill coverage</Label>
+                            <div className="text-sm font-bold text-black">
+                              {have.length} of {have.length + need.length} key skills
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <MatchBar value={Math.round((have.length / (have.length + need.length)) * 100)} color="#2f9e62" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-6 grid flex-1 gap-4 sm:grid-cols-2">
+                        <div className="min-w-0 rounded-2xl bg-[#eaf6ef] p-4">
+                          <Label className="text-[#2f9e62]">You already have</Label>
+                          {have.length > 0 ? (
+                            <Chips items={have} className="border-[#bfe3cd]" />
+                          ) : (
+                            <div className="mt-2 text-sm text-neutral-600">
+                              No matching skills recorded yet.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 rounded-2xl bg-[#fcecec] p-4">
+                          <Label className="text-[#e0404a]">Still to build</Label>
+                          {need.length > 0 ? (
+                            <Chips items={need} className="border-[#f0c4c7]" />
+                          ) : (
+                            <div className="mt-2 text-sm text-neutral-600">
+                              You cover all listed key skills.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4">
+                        <div className="min-w-0 text-sm text-neutral-500">Selecting saves this career and unlocks its roadmap.</div>
+                        <button
+                          type="button"
+                          onClick={() => chooseCareer(currentCareer)}
+                          disabled={busy || isSelected}
+                          className={`rounded-full px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white transition ${
+                            isSelected
+                              ? 'cursor-default bg-[#6d6d80]'
+                              : 'bg-[#0b0b2b] hover:bg-[#1a1a4a]'
+                          } disabled:opacity-70`}
+                        >
+                          {isSelected ? 'Selected ✓' : busy ? 'Saving...' : 'Select this career'}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                ) : (
+                  <section className="rounded-3xl border border-[#e6d8c3] bg-white p-6">
+                    <h2 className="text-lg font-extrabold text-black">
+                      No career recommendations available
+                    </h2>
+                    <div className="mt-2 text-sm text-neutral-600">
+                      Your prediction was loaded, but it does not contain a list of recommended
+                      careers.
                     </div>
                   </section>
-                </div>
-              ) : (
-                <section className="rounded-3xl border border-[#e6d8c3] bg-white p-6">
-                  <h2 className="text-lg font-extrabold text-black">
-                    No career recommendations available
-                  </h2>
-                  <p className="mt-2 text-sm text-neutral-600">
-                    Your prediction was loaded, but it does not contain a list of recommended
-                    careers.
-                  </p>
-                </section>
-              )}
-
-              {/* Careers to avoid: collapsed by default */}
-              <details className="group rounded-3xl border border-dashed border-[#d9c8ae] bg-[#fbf6ee] p-5">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
-                  <div>
-                    <h2 className="text-base font-extrabold text-black">
-                      Careers to avoid ({Math.min(avoid.length, 3)})
-                    </h2>
-                    <p className="text-sm text-neutral-500">
-                      Fields that may be a weaker fit for this profile
-                    </p>
-                  </div>
-                  <Chevron />
-                </summary>
-
-                {avoid.length === 0 ? (
-                  <p className="mt-4 text-sm text-neutral-500">
-                    No careers to avoid were flagged for this prediction.
-                  </p>
-                ) : (
-                  <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    {avoid.slice(0, 3).map((career, index) => {
-                      const title = text(career)
-                      const reason =
-                        typeof career === 'object'
-                          ? career.reason ?? career.description ?? career.why ?? ''
-                          : ''
-
-                      return (
-                        <li
-                          key={`${title}-${index}`}
-                          className="min-w-0 rounded-2xl border border-[#f0c4c7] bg-white p-4"
-                        >
-                          <div className="flex items-start gap-2">
-                            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#e0404a]" />
-                            <h3 className="break-words text-sm font-extrabold leading-snug text-black">
-                              {title}
-                            </h3>
-                          </div>
-                          <p className="mt-2 line-clamp-4 break-words text-xs leading-relaxed text-neutral-600">
-                            {reason ||
-                              'This career was identified as a potentially weaker match for your current profile.'}
-                          </p>
-                        </li>
-                      )
-                    })}
-                  </ul>
                 )}
-              </details>
-
-              <footer className="pb-4 text-xs leading-relaxed text-neutral-500">
-                Suggestions are based on your personality type, skills, and education. Use them as a
-                guide, not a rule.
-              </footer>
+              </div>
             </div>
-          </div>
+
+            {/* Careers to avoid: always visible, titles only, full width */}
+            {avoid.length > 0 && (
+              <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6">
+                <h2 className="text-base font-extrabold text-black">Careers to avoid</h2>
+                <div className="text-sm text-neutral-500">
+                  Fields that may be a weaker fit for this profile
+                </div>
+
+                <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {avoid.map((career, index) => (
+                    <li
+                      key={`${text(career)}-${index}`}
+                      className="flex min-w-0 items-start gap-3 rounded-2xl border border-[#f0c4c7] bg-white px-4 py-3"
+                    >
+                      <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#e0404a]" />
+                      <div className="min-w-0 break-words text-sm font-extrabold leading-snug text-black">
+                        {text(career)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            <footer className="pb-4 text-xs leading-relaxed text-neutral-500">
+              Suggestions are based on your personality type, skills, and education. Use them as a
+              guide, not a rule.
+            </footer>
+          </>
         )}
       </div>
     </main>

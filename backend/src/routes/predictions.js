@@ -39,6 +39,47 @@ const formatRoadmap = (r) =>
       }
     : null
 
+/* ---------- technical skills (career_roadmaps.technical_skills) ----------
+   The "You already have" / "Still to build" chips are built from the career's
+   technical_skills column, so editing that column in Supabase changes what users see.
+   "Have" = a technical skill the user already has, based on the skills saved with the
+   prediction (skills_have) and the skills they entered in the assessment.
+   "Still to build" = the rest of the technical skills.
+   If a career has no technical_skills, the old saved lists are used as a fallback. */
+const norm = (s) => String(s ?? '').trim().toLowerCase()
+const skillName = (s) => (typeof s === 'string' ? s : s?.name ?? s?.title ?? s?.label ?? s?.text ?? '')
+const skillNames = (v) =>
+  (Array.isArray(v) ? v : []).map(skillName).map((s) => String(s).trim()).filter(Boolean)
+
+function technicalSkillSplit(c, userSkills) {
+  const technical = [...new Set(skillNames(one(c.career_roadmaps)?.technical_skills))]
+
+  if (!technical.length) {
+    return { have: c.skills_have, need: c.skills_to_build, fromRoadmap: false }
+  }
+
+  const known = new Set([...skillNames(c.skills_have), ...skillNames(userSkills)].map(norm))
+
+  return {
+    have: technical.filter((s) => known.has(norm(s))),
+    need: technical.filter((s) => !known.has(norm(s))),
+    fromRoadmap: true,
+  }
+}
+
+// The "Why this fits" lines that list skills are rewritten so they match the chips
+const HAVE_PREFIX = 'Skills you already have:'
+const NEED_PREFIX = 'Skills to work on:'
+
+function rewriteSkillReasons(reasons, have, need) {
+  return (Array.isArray(reasons) ? reasons : []).flatMap((r) => {
+    const t = skillName(r)
+    if (t.startsWith(HAVE_PREFIX)) return have.length ? [`${HAVE_PREFIX} ${have.join(', ')}.`] : []
+    if (t.startsWith(NEED_PREFIX)) return need.length ? [`${NEED_PREFIX} ${need.join(', ')}.`] : []
+    return [r]
+  })
+}
+
 // Every route here requires a logged-in, verified user, and only returns THEIR predictions
 router.use(requireAuth)
 
@@ -51,7 +92,7 @@ async function sendPrediction(req, res, id) {
       `id, selected_career, created_at,
        assessments(mbti, degree_program, skills, career_preference),
        prediction_results(personality, preference_note, disclaimer),
-       recommended_careers(rank, code, title, match_percent, description, why, reasons, skills_have, skills_to_build, career_roadmaps(id)),
+       recommended_careers(rank, code, title, match_percent, description, why, reasons, skills_have, skills_to_build, career_roadmaps(id, technical_skills)),
        avoid_careers(rank, code, title, description, why, reasons)`
     )
     .eq('id', id)
@@ -92,18 +133,24 @@ async function sendPrediction(req, res, id) {
         preferenceNote: r?.preference_note ?? null,
         disclaimer: r?.disclaimer ?? null,
       },
-      recommended: [...p.recommended_careers].sort(byRank).map((c) => ({
-        rank: c.rank,
-        code: c.code,
-        title: c.title,
-        matchPercent: Number(c.match_percent),
-        description: c.description,
-        why: c.why,
-        reasons: c.reasons,
-        skillsHave: c.skills_have,
-        skillsToBuild: c.skills_to_build,
-        hasRoadmap: Boolean(one(c.career_roadmaps)),
-      })),
+      recommended: [...p.recommended_careers].sort(byRank).map((c) => {
+        const skills = technicalSkillSplit(c, a?.skills)
+
+        return {
+          rank: c.rank,
+          code: c.code,
+          title: c.title,
+          matchPercent: Number(c.match_percent),
+          description: c.description,
+          why: c.why,
+          reasons: skills.fromRoadmap
+            ? rewriteSkillReasons(c.reasons, skills.have, skills.need)
+            : c.reasons,
+          skillsHave: skills.have,
+          skillsToBuild: skills.need,
+          hasRoadmap: Boolean(one(c.career_roadmaps)),
+        }
+      }),
       avoid: [...p.avoid_careers].sort(byRank).map((c) => ({
         rank: c.rank,
         code: c.code,
