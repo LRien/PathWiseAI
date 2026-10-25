@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { sendContactMessage } from '../../api/contact' // adjust path to wherever your api folder is
+import React, { useState, useRef } from 'react'
+import { sendContactMessage } from '../../api/contact'
 
 const CONTACT_EMAIL = 'careermatchpathwiseai@gmail.com'
 
@@ -15,6 +15,7 @@ const ContactPage = () => {
   const [form, setForm] = useState(EMPTY)
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
   const [errorMsg, setErrorMsg] = useState('')
+  const mountedAt = useRef(Date.now())
 
   const onChange = (e) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }))
@@ -24,8 +25,13 @@ const ContactPage = () => {
   const onSubmit = async (e) => {
     e.preventDefault()
 
-    // Honeypot: bots fill hidden fields, real users don't
-    const honey = e.target.elements._honey?.value || ''
+    // Bot check: real users take more than 2s to fill this form.
+    // Instant submits are treated as bots and silently dropped.
+    if (Date.now() - mountedAt.current < 2000) {
+      setForm(EMPTY)
+      setStatus('sent')
+      return
+    }
 
     setStatus('sending')
     setErrorMsg('')
@@ -35,7 +41,6 @@ const ContactPage = () => {
         email: form.email,
         subject: form.subject,
         message: form.message,
-        _honey: honey,
       })
       setForm(EMPTY)
       setStatus('sent')
@@ -68,16 +73,6 @@ const ContactPage = () => {
       <section className="contact__form-wrap" aria-labelledby="contact-form-title">
         <form className="contact__form" onSubmit={onSubmit}>
           <h2 id="contact-form-title" className="contact__form-title">Send Us a Message</h2>
-
-          {/* honeypot, hidden from real users */}
-          <input
-            type="text"
-            name="_honey"
-            tabIndex={-1}
-            autoComplete="off"
-            aria-hidden="true"
-            style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
-          />
 
           <div className="contact__row">
             <div className="contact__field">
