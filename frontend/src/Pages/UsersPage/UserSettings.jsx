@@ -6,9 +6,16 @@ import { changePassword, deleteAccount } from '../../api/auth'
 import { listPredictions } from '../../api/predictions'
 import PasswordChecklist, { isStrongPassword, PASSWORD_RULES_MESSAGE } from '../AuthPages/PasswordChecklist'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
+import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoader'
 
 const inputCls =
   'w-full rounded-xl border border-[#e0d1ba] bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#0b0b2b] focus:ring-2 focus:ring-[#0b0b2b]/15 disabled:cursor-not-allowed disabled:bg-[#f3ece0] disabled:text-neutral-500'
+
+const SETTINGS_LINES = [
+  'Opening your profile...',
+  'Checking your account...',
+  'Getting your settings ready...',
+]
 
 const Section = ({ title, desc, children }) => (
   <section className="rounded-3xl bg-[#fbf6ee] p-5 shadow-sm sm:p-7">
@@ -105,6 +112,11 @@ const UserSettings = () => {
   /* the character comes from the latest prediction; no prediction means no character */
   const [mbtiType, setMbtiType] = useState(null)
 
+  /* loader: stays up until the request has settled AND its finish animation has played */
+  const [loaded, setLoaded] = useState(false)
+  const [showLoader, setShowLoader] = useState(true)
+  const [cachedMbti] = useState(getCachedMbti)
+
   useEffect(() => {
     let cancelled = false
     listPredictions()
@@ -114,10 +126,17 @@ const UserSettings = () => {
       .catch(() => {
         /* no prediction or the request failed: just no character */
       })
+      .finally(() => {
+        if (!cancelled) setLoaded(true)
+      })
     return () => {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    cacheMbti(mbtiType)
+  }, [mbtiType])
 
   const theme = mbtiTheme(mbtiType) // null when there is no prediction or the type is unknown
 
@@ -281,6 +300,19 @@ const UserSettings = () => {
         <aside className="sticky top-6 min-w-0">
           <CharacterCard code={mbtiType} theme={theme} />
         </aside>
+      )}
+
+      {/* build loader with your own MBTI character (fixed overlay, so it never affects the grid) */}
+      {showLoader && (
+        <PageLoader
+          mbti={mbtiType || cachedMbti}
+          ready={loaded}
+          onFinished={() => setShowLoader(false)}
+          minShow={1800}
+          lines={SETTINGS_LINES}
+          title={(t, code) => (t ? `Opening settings for your ${code}` : 'Opening your settings')}
+          doneTitle={(t) => (t ? `Your ${t.name} settings are ready!` : 'Settings are ready!')}
+        />
       )}
     </div>
   )

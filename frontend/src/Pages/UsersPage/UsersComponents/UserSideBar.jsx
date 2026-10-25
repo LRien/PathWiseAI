@@ -33,15 +33,15 @@ const writeSeen = (set) => {
 }
 
 const fmtDate = (iso) =>
-  new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
+  new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
 
 const clampPct = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)))
 
 /* ---------- tiny inline icons (no icon library needed) ---------- */
-const Icon = ({ children }) => (
+const Icon = ({ children, className = 'h-[18px] w-[18px]' }) => (
   <svg
     viewBox="0 0 24 24"
-    className="h-[18px] w-[18px] shrink-0"
+    className={`${className} shrink-0`}
     fill="none"
     stroke="currentColor"
     strokeWidth="1.8"
@@ -79,18 +79,57 @@ const ICONS = {
     </Icon>
   ),
   trash: (
-    <Icon>
+    <Icon className="h-4 w-4">
       <path d="M4 7h16" />
       <path d="M10 11v6M14 11v6" />
       <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
       <path d="M9 7V4h6v3" />
     </Icon>
   ),
+  flag: (
+    <Icon className="h-5 w-5">
+      <path d="M5 21V4" />
+      <path d="M5 4h11l-2 4 2 4H5" />
+    </Icon>
+  ),
+  empty: (
+    <Icon className="h-6 w-6">
+      <path d="M3 7l9-4 9 4v10l-9 4-9-4z" />
+      <path d="M3 7l9 4 9-4M12 11v10" />
+    </Icon>
+  ),
 }
 
-const itemCls = 'flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition'
+const itemCls =
+  'flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40'
 
-/* ---------- one prediction card: link + tag + match bar + delete (with an inline "are you sure?") ---------- */
+/* ---------- circular match meter ---------- */
+const MatchRing = ({ percent, active }) => {
+  const R = 18
+  const C = 2 * Math.PI * R
+  return (
+    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center" aria-hidden="true">
+      <svg viewBox="0 0 44 44" className="absolute inset-0 h-full w-full -rotate-90">
+        <circle cx="22" cy="22" r={R} fill="none" strokeWidth="4" stroke={active ? 'rgba(255,255,255,.2)' : '#e8dcc8'} />
+        <circle
+          cx="22"
+          cy="22"
+          r={R}
+          fill="none"
+          strokeWidth="4"
+          strokeLinecap="round"
+          stroke={active ? '#5aa9ff' : '#2f80e0'}
+          strokeDasharray={C}
+          strokeDashoffset={C - (percent / 100) * C}
+          style={{ transition: 'stroke-dashoffset .6s ease' }}
+        />
+      </svg>
+      <span className="relative text-[11px] font-black">{percent}%</span>
+    </span>
+  )
+}
+
+/* ---------- one prediction card: link + tag + match ring + delete (with an inline "are you sure?") ---------- */
 const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -120,10 +159,10 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
       <div
         role="alertdialog"
         aria-label={`Delete prediction ${pred.number}`}
-        className="rounded-2xl border border-[#f0c4c7] bg-[#fcecec] px-4 py-3.5"
+        className="rounded-2xl border border-[#f0c4c7] bg-[#fcecec] p-4"
       >
         <p className="text-sm font-extrabold text-black">Delete Prediction #{pred.number}?</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-neutral-600">
+        <p className="mt-1 text-xs leading-relaxed text-neutral-600">
           This removes it and its careers for good. You can&apos;t undo this.
         </p>
         <div className="mt-3 flex gap-2">
@@ -134,7 +173,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
               setError('')
             }}
             disabled={busy}
-            className="flex-1 rounded-full border border-[#e0d1ba] bg-white px-3 py-2 text-xs font-bold uppercase tracking-wide text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-60"
+            className="flex-1 rounded-full border border-[#e0d1ba] bg-white px-3 py-2 text-xs font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-60"
           >
             Cancel
           </button>
@@ -142,7 +181,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
             type="button"
             onClick={remove}
             disabled={busy}
-            className="flex-1 rounded-full bg-[#e0404a] px-3 py-2 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#c9343d] disabled:opacity-60"
+            className="flex-1 rounded-full bg-[#e0404a] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#c9343d] disabled:opacity-60"
           >
             {busy ? 'Deleting...' : 'Delete'}
           </button>
@@ -163,48 +202,50 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
         end
         onClick={onNavigate}
         className={({ isActive }) =>
-          `block rounded-2xl border px-4 py-3.5 pr-11 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40 ${
+          `flex items-center gap-3 rounded-2xl border p-3 pr-11 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40 ${
             isActive
-              ? 'border-[#0b0b2b] bg-[#0b0b2b] text-white'
-              : 'border-[#e6d8c3] bg-[#fbf6ee] text-black hover:-translate-y-0.5 hover:border-[#0b0b2b]/40 hover:shadow-md'
+              ? 'border-[#0b0b2b] bg-[#0b0b2b] text-white shadow-md'
+              : 'border-[#e6d8c3] bg-white/70 text-black hover:border-[#0b0b2b]/40 hover:bg-white hover:shadow-sm'
           }`
         }
       >
         {({ isActive }) => (
           <>
-            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-base font-extrabold leading-tight tracking-tight">Prediction #{pred.number}</span>
-              {tag && (
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-bold text-white ${
-                    isActive ? 'bg-white/20' : isNew ? 'bg-[#2f9e62]' : 'bg-[#0b0b2b]'
-                  }`}
-                >
-                  {tag}
+            {pred.topMatch ? (
+              <MatchRing percent={percent} active={isActive} />
+            ) : (
+              <span
+                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-black ${
+                  isActive ? 'bg-white/15' : 'bg-[#f3e7d6]'
+                }`}
+                aria-hidden="true"
+              >
+                #{pred.number}
+              </span>
+            )}
+
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="text-sm font-extrabold leading-tight">Prediction #{pred.number}</span>
+                {tag && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold leading-none text-white ${
+                      isActive ? 'bg-white/20' : isNew ? 'bg-[#2f9e62]' : 'bg-[#0b0b2b]'
+                    }`}
+                  >
+                    {tag}
+                  </span>
+                )}
+              </span>
+              {pred.topMatch && (
+                <span className={`mt-0.5 block truncate text-xs font-semibold ${isActive ? 'text-white/85' : 'text-neutral-700'}`}>
+                  {pred.topMatch.title}
                 </span>
               )}
+              <span className={`mt-0.5 block text-[11px] font-semibold ${isActive ? 'text-white/60' : 'text-neutral-500'}`}>
+                {fmtDate(pred.createdAt)}
+              </span>
             </span>
-
-            <span className={`mt-0.5 block text-sm font-semibold ${isActive ? 'text-white/70' : 'text-neutral-500'}`}>
-              {fmtDate(pred.createdAt)}
-            </span>
-
-            {pred.topMatch && (
-              <>
-                <span className="mt-3 flex items-center justify-between gap-2">
-                  <span className={`min-w-0 flex-1 truncate text-xs font-semibold ${isActive ? 'text-white/85' : 'text-neutral-700'}`}>
-                    {pred.topMatch.title}
-                  </span>
-                  <span className="shrink-0 text-sm font-black">{percent}%</span>
-                </span>
-                <span className={`mt-1.5 block h-1.5 overflow-hidden rounded-full ${isActive ? 'bg-white/20' : 'bg-[#e8dcc8]'}`}>
-                  <span
-                    className="block h-full rounded-full"
-                    style={{ width: `${percent}%`, background: isActive ? '#5aa9ff' : '#2f80e0' }}
-                  />
-                </span>
-              </>
-            )}
           </>
         )}
       </NavLink>
@@ -221,6 +262,17 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
     </div>
   )
 }
+
+/* placeholder cards while the list loads */
+const SkeletonCard = () => (
+  <div className="flex animate-pulse items-center gap-3 rounded-2xl border border-[#e6d8c3] bg-white/50 p-3 motion-reduce:animate-none">
+    <span className="h-12 w-12 shrink-0 rounded-full bg-[#e8dcc8]" />
+    <span className="min-w-0 flex-1 space-y-2">
+      <span className="block h-3 w-3/5 rounded-full bg-[#e8dcc8]" />
+      <span className="block h-2.5 w-4/5 rounded-full bg-[#efe4d2]" />
+    </span>
+  </div>
+)
 
 /* ---------- the list of past predictions ---------- */
 const PredictionList = ({ onNavigate }) => {
@@ -279,19 +331,60 @@ const PredictionList = ({ onNavigate }) => {
 
   return (
     <div className="mt-6 flex min-h-0 flex-1 flex-col">
-      <div className="px-1 text-xs font-bold uppercase tracking-wide text-neutral-500">Your predictions</div>
+      <div className="flex items-center justify-between px-1">
+        <h2 className="text-sm font-extrabold text-black">Your predictions</h2>
+        {items?.length > 0 && (
+          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-neutral-600 ring-1 ring-[#e6d8c3]">
+            {items.length}
+          </span>
+        )}
+      </div>
 
       <nav
         aria-label="Your predictions"
         data-lenis-prevent
-        className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1"
+        className="mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-0.5 py-1 pr-1"
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#d9c8ae transparent',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 16px), transparent)',
+          maskImage: 'linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 16px), transparent)',
+        }}
       >
-        {items === null && !failed && <p className="px-1 text-sm text-neutral-500">Loading predictions...</p>}
-        {items === null && failed && <p className="px-1 text-sm text-neutral-500">Couldn&apos;t load predictions.</p>}
+        {items === null && !failed && (
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        )}
+
+        {items === null && failed && (
+          <div className="rounded-2xl border border-dashed border-[#d9c8ae] px-4 py-5 text-center">
+            <p className="text-sm font-bold text-black">Couldn&apos;t load predictions</p>
+            <button
+              type="button"
+              onClick={() => {
+                setFailed(false)
+                setReloadKey((k) => k + 1)
+              }}
+              className="mt-2 rounded-full border border-[#d9c8ae] bg-white px-4 py-1.5 text-xs font-bold text-neutral-700 transition hover:border-[#0b0b2b]"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
         {items?.length === 0 && (
-          <p className="px-1 text-sm leading-relaxed text-neutral-500">
-            Nothing here yet. Start a new prediction to see your career matches.
-          </p>
+          <div className="rounded-2xl border border-dashed border-[#d9c8ae] px-4 py-6 text-center">
+            <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-white text-neutral-500 ring-1 ring-[#e6d8c3]">
+              {ICONS.empty}
+            </span>
+            <p className="mt-3 text-sm font-bold text-black">No predictions yet</p>
+            <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+              Start a new prediction to see your career matches here.
+            </p>
+          </div>
         )}
 
         {items?.map((p, i) => (
@@ -421,20 +514,28 @@ const UserSideBar = ({ onNavigate }) => {
           role="dialog"
           aria-modal="true"
           aria-label="Sidebar"
-          className={`absolute inset-y-0 left-0 flex w-80 max-w-[88vw] flex-col rounded-r-3xl bg-[#f3e7d6] px-5 py-6 shadow-2xl transition-[transform,visibility] duration-300 ease-in-out motion-reduce:transition-none ${
+          className={`absolute inset-y-0 left-0 flex w-[21rem] max-w-[90vw] flex-col rounded-r-[2rem] bg-gradient-to-b from-[#f8eedf] to-[#f3e7d6] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] shadow-2xl transition-[transform,visibility] duration-300 ease-in-out motion-reduce:transition-none ${
             open ? 'translate-x-0' : 'invisible -translate-x-full'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <Link to="/" onClick={handleNavigate} className="px-1 text-lg font-black tracking-tight text-black">
-              CAREER MATCH
+          {/* brand + close */}
+          <div className="flex items-center justify-between gap-3">
+            <Link
+              to="/"
+              onClick={handleNavigate}
+              className="flex min-w-0 items-center gap-2.5 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0b0b2b] text-white shadow-sm">
+                {ICONS.flag}
+              </span>
+              <span className="truncate text-lg font-black tracking-tight text-black">Career Match</span>
             </Link>
             <button
               type="button"
               onClick={close}
               aria-label="Close sidebar"
               title="Close sidebar"
-              className="rounded-full border border-[#d9c8ae] bg-white p-2 text-neutral-600 transition hover:border-[#0b0b2b] hover:text-black"
+              className="rounded-full border border-[#d9c8ae] bg-white p-2 text-neutral-600 transition hover:border-[#0b0b2b] hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b0b2b]/40"
             >
               {ICONS.hide}
             </button>
@@ -443,7 +544,7 @@ const UserSideBar = ({ onNavigate }) => {
           <Link
             to="/assessment-test"
             onClick={handleNavigate}
-            className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#0b0b2b] px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white shadow-sm transition hover:bg-[#1a1a4a]"
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b0b2b] px-5 py-3 text-sm font-extrabold text-white shadow-md transition hover:bg-[#1a1a4a] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2f80e0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#f3e7d6]"
           >
             {ICONS.plus}
             New prediction
@@ -453,7 +554,7 @@ const UserSideBar = ({ onNavigate }) => {
           <PredictionList onNavigate={handleNavigate} />
 
           {/* settings + log out stay at the bottom */}
-          <div className="mt-4 space-y-1 border-t border-[#e6d8c3] pt-3">
+          <div className="mt-3 space-y-1 border-t border-[#e6d8c3] pt-3">
             <NavLink
               to="/dashboard/settings"
               onClick={handleNavigate}
@@ -461,14 +562,18 @@ const UserSideBar = ({ onNavigate }) => {
                 `${itemCls} ${
                   isActive
                     ? 'bg-[#0b0b2b] text-white shadow-sm'
-                    : 'text-neutral-600 hover:bg-white/70 hover:text-black'
+                    : 'text-neutral-600 hover:bg-white/80 hover:text-black'
                 }`
               }
             >
               {ICONS.settings}
               Settings
             </NavLink>
-            <button type="button" onClick={logout} className={`${itemCls} text-neutral-500 hover:bg-white/70 hover:text-black`}>
+            <button
+              type="button"
+              onClick={logout}
+              className={`${itemCls} text-neutral-600 hover:bg-[#fcecec] hover:text-[#e0404a]`}
+            >
               {ICONS.logout}
               Log out
             </button>

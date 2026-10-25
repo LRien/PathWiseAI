@@ -3,8 +3,16 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { FaCheckCircle } from 'react-icons/fa'
 import { getPrediction, selectCareer } from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
+import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoader'
 
 const RANK_COLORS = ['#2f80e0', '#f2c230', '#e0404a']
+
+const DETAIL_LINES = [
+  'Opening your prediction...',
+  'Loading your top 3 careers...',
+  'Checking your skills match...',
+  'Putting the details together...',
+]
 
 const list = (v) => (Array.isArray(v) ? v : [])
 const str = (v) => (typeof v === 'string' ? v : '')
@@ -27,6 +35,11 @@ const fmtDate = (iso) => {
 }
 
 /* NOTE: text uses <div>/<span> with explicit sizes, because the global p { font-size: var(--text-body) } rule overrides Tailwind sizes */
+
+/* entrance: a block stays invisible until `play` is true (loader gone), then rises in.
+   n is the order (0 = first). */
+const riseStyle = (play, n = 0) =>
+  play ? { animation: `detailRise .6s cubic-bezier(.2,.7,.3,1) ${n * 110}ms both` } : { opacity: 0 }
 
 /* ---------- small shared pieces ---------- */
 const Check = () => (
@@ -68,30 +81,45 @@ const RankBadge = ({ index }) => (
   </span>
 )
 
-const MatchBar = ({ value, color = '#2f80e0' }) => (
-  <div className="h-2 overflow-hidden rounded-full bg-[#e8dcc8]">
-    <div
-      className="h-full rounded-full transition-all duration-300"
-      style={{ width: `${Math.max(0, Math.min(100, Number(value) || 0))}%`, background: color }}
-    />
-  </div>
-)
+/* the bar sits at 0 until `play` is true, then fills up (so it fills after the loader, not behind it) */
+const MatchBar = ({ value, color = '#2f80e0', play = true }) => {
+  const target = Math.max(0, Math.min(100, Number(value) || 0))
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    if (!play) {
+      setW(0)
+      return undefined
+    }
+    const id = requestAnimationFrame(() => setW(target))
+    return () => cancelAnimationFrame(id)
+  }, [play, target])
+
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-[#e8dcc8]">
+      <div
+        className="h-full rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none"
+        style={{ width: `${w}%`, background: color }}
+      />
+    </div>
+  )
+}
 
 /* ---------- left column: personality profile ---------- */
-const ProfileCard = ({ assessment, insights }) => {
+const ProfileCard = ({ assessment, insights, play }) => {
   const mbti = assessment?.mbti
   const theme = mbtiTheme(mbti)
   const intro = str(insights?.personality) || theme?.blurb
 
   return (
     <section
-      className="flex flex-1 flex-col justify-center rounded-3xl p-5 shadow-sm"
-      style={{ background: theme?.tint ?? '#cde6f6' }}
+      className="detail-rise flex flex-1 flex-col justify-center rounded-3xl p-5 shadow-sm"
+      style={{ background: theme?.tint ?? '#cde6f6', ...riseStyle(play, 1) }}
     >
       <div className="flex flex-col items-center gap-3 text-center">
         {theme && (
           <div className="w-56 shrink-0 sm:w-64 lg:w-40">
-            <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />
+            {/* mounted only after the loader, so the character's own intro animation plays when you can see it */}
+            {play && <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />}
           </div>
         )}
         <div className="min-w-0">
@@ -111,8 +139,11 @@ const ProfileCard = ({ assessment, insights }) => {
 }
 
 /* ---------- left column: selection card ---------- */
-const ChoiceCard = ({ selected, saving, onGo }) => (
-  <section className="rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm">
+const ChoiceCard = ({ selected, saving, onGo, play }) => (
+  <section
+    className="detail-rise rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm"
+    style={riseStyle(play, 2)}
+  >
     <Label className="text-[#8fb8ff]">Your choice</Label>
     <h3 className="mt-1 break-words text-lg font-extrabold leading-snug">
       {selected || 'Nothing selected yet'}
@@ -134,7 +165,7 @@ const ChoiceCard = ({ selected, saving, onGo }) => (
 )
 
 /* ---------- right column: folder tabs + career details ---------- */
-const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
+const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) => {
   const [skillTab, setSkillTab] = useState('technical')
   const c = recs[focus] ?? recs[0]
   const reasons = reasonsOf(c)
@@ -202,7 +233,7 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
         </div>
 
         <div className="mt-4">
-          <MatchBar value={pct(c)} color={RANK_COLORS[focus]} />
+          <MatchBar value={pct(c)} color={RANK_COLORS[focus]} play={play} />
         </div>
 
         <div className="mt-5">
@@ -260,7 +291,11 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
               </div>
             </div>
             <div className="mt-2">
-              <MatchBar value={Math.round((have.length / (have.length + need.length)) * 100)} color="#2f9e62" />
+              <MatchBar
+                value={Math.round((have.length / (have.length + need.length)) * 100)}
+                color="#2f9e62"
+                play={play}
+              />
             </div>
           </div>
         )}
@@ -303,8 +338,11 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected }) => {
 }
 
 /* ---------- careers to avoid: always visible, titles only ---------- */
-const AvoidSection = ({ avoid }) => (
-  <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6">
+const AvoidSection = ({ avoid, play }) => (
+  <section
+    className="detail-rise rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6"
+    style={riseStyle(play, 3)}
+  >
     <h2 className="text-base font-extrabold text-black">Careers to avoid</h2>
     <div className="text-sm text-neutral-500">Fields that may be a weaker fit for this profile</div>
     <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -335,6 +373,13 @@ const PredictionDetail = () => {
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState('')
 
+  /* loader: stays up until the prediction is in (or failed) AND its finish animation has played */
+  const [showLoader, setShowLoader] = useState(true)
+  const [cachedMbti] = useState(getCachedMbti)
+
+  /* every animation on this page waits for this: true only once the loader is completely gone */
+  const play = Boolean(pred) && !showLoader
+
   useEffect(() => {
     let cancelled = false
     setPred(null)
@@ -353,20 +398,48 @@ const PredictionDetail = () => {
     }
   }, [id])
 
+  /* the loader shows this prediction's own type once known, otherwise the one remembered from last visit */
+  const loaderMbti = pred?.assessment?.mbti || cachedMbti
+  useEffect(() => {
+    cacheMbti(pred?.assessment?.mbti)
+  }, [pred])
+
+  const loader = showLoader ? (
+    <PageLoader
+      mbti={loaderMbti}
+      ready={Boolean(pred) || Boolean(error)}
+      onFinished={() => setShowLoader(false)}
+      minShow={1800}
+      lines={DETAIL_LINES}
+      title={(t, code) => (t ? `Opening your ${code} prediction` : 'Opening your prediction')}
+      doneTitle={(t, code) => (t ? `${code} · ${t.name}, here it is!` : 'Here it is!')}
+    />
+  ) : null
+
   if (error) {
     return (
-      <div className="space-y-4">
-        <div className="text-base text-neutral-600">
-          {error === 'Prediction not found' ? 'That prediction could not be found.' : error}
+      <>
+        <div className="space-y-4">
+          <div className="text-base text-neutral-600">
+            {error === 'Prediction not found' ? 'That prediction could not be found.' : error}
+          </div>
+          <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
+            ← Back to history
+          </Link>
         </div>
-        <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
-          ← Back to history
-        </Link>
-      </div>
+        {loader}
+      </>
     )
   }
 
-  if (!pred) return <div className="text-base text-neutral-500">Loading prediction...</div>
+  if (!pred) {
+    return (
+      <>
+        <div className="min-h-[60vh]" />
+        {loader}
+      </>
+    )
+  }
 
   const { assessment, insights } = pred
   const recs = list(pred.recommended).slice(0, 3)
@@ -390,7 +463,12 @@ const PredictionDetail = () => {
 
   return (
     <div className="space-y-6">
-      <header className="min-w-0">
+      <style>{`
+        @keyframes detailRise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .detail-rise { animation: none !important; opacity: 1 !important; transform: none !important; } }
+      `}</style>
+
+      <header className="detail-rise min-w-0" style={riseStyle(play, 0)}>
         <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
           ← Back to history
         </Link>
@@ -412,12 +490,12 @@ const PredictionDetail = () => {
       <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
         {/* LEFT: profile + choice, same height as the career panel */}
         <aside className="flex min-w-0 flex-col gap-4">
-          <ProfileCard assessment={assessment} insights={insights ?? {}} />
-          <ChoiceCard selected={selected} saving={saving} onGo={goToRoadmap} />
+          <ProfileCard assessment={assessment} insights={insights ?? {}} play={play} />
+          <ChoiceCard selected={selected} saving={saving} onGo={goToRoadmap} play={play} />
         </aside>
 
         {/* RIGHT: careers */}
-        <div className="flex min-w-0 flex-col">
+        <div className="detail-rise flex min-w-0 flex-col" style={riseStyle(play, 1)}>
           {recs.length > 0 ? (
             <CareerFolder
               recs={recs}
@@ -425,6 +503,7 @@ const PredictionDetail = () => {
               setFocus={setFocus}
               selected={selected}
               setSelected={setSelected}
+              play={play}
             />
           ) : (
             <section className="rounded-3xl border border-[#e6d8c3] bg-white p-6">
@@ -438,11 +517,16 @@ const PredictionDetail = () => {
       </div>
 
       {/* full width, so nothing sits beside it as empty space */}
-      {avoid.length > 0 && <AvoidSection avoid={avoid} />}
+      {avoid.length > 0 && <AvoidSection avoid={avoid} play={play} />}
 
       {str(insights?.disclaimer) && (
-        <div className="text-xs leading-relaxed text-neutral-500">{insights.disclaimer}</div>
+        <div className="detail-rise text-xs leading-relaxed text-neutral-500" style={riseStyle(play, 4)}>
+          {insights.disclaimer}
+        </div>
       )}
+
+      {/* the loader finishing its animation on top of the ready page */}
+      {loader}
     </div>
   )
 }

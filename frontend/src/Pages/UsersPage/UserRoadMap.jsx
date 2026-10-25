@@ -5,13 +5,14 @@ import { FaCheckCircle, FaFlagCheckered, FaPlay, FaStar, FaYoutube } from 'react
 import { SiCoursera, SiUdemy } from 'react-icons/si'
 import { getLatestPrediction, getPrediction, getRoadmap, listPredictions } from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
+import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoader'
 
 /* ------------------------------------------------------------------ */
 /* UserRoadMap                                                         */
 /*                                                                     */
-/* The map is a little isometric "island" (a floating slab of land)    */
-/* with a road winding across it, a river with a bridge and a          */
-/* waterfall, buildings, trees, clouds and a plane.                    */
+/* The map is a bright, parchment-style isometric "island" with a      */
+/* road winding across it, a river with a bridge and a waterfall,      */
+/* buildings, trees, clouds, a compass and a plane.                    */
 /*                                                                     */
 /*   - mobile / tablet (under 1024px): the road winds DOWN the island   */
 /*   - desktop (1024px and up): the road runs ACROSS the island, which  */
@@ -24,12 +25,26 @@ import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
 /* Your MBTI character walks the map (and detours onto side paths).    */
 /* The cheering character + speech bubble floats above the focus card  */
 /* on every screen size, desktop included.                             */
+/*                                                                     */
+/* While the roadmap loads, PageLoader shows the "bars get built"      */
+/* effect with your own MBTI character on top.                         */
+/*                                                                     */
+/* All map animations (entrance, preview walk, trail, walk, pulse,     */
+/* celebration) and the cheering character wait until the loader has   */
+/* finished and is gone (see animReady).                               */
 /* ------------------------------------------------------------------ */
 
 const BACK = '/dashboard'
 const SIDE = '#8b5cf6' // side path (optional steps)
 const HIDDEN = { opacity: 0 } // animated in by anime.js
 const CONFETTI = ['#2f80e0', '#f2c230', '#e0404a', '#2f9e62', '#0b0b2b', '#8b5cf6']
+
+const ROAD_LINES = [
+  'Finding your selected career...',
+  'Drawing your road...',
+  'Placing every step on the map...',
+  'Getting your character ready...',
+]
 
 const readSaved = () => {
   try {
@@ -185,7 +200,7 @@ const scrollParent = (node) => {
 /* They are plain DOM pieces added to the map's overlay, animated with  */
 /* the Web Animations API, and removed again when they finish.          */
 /* ------------------------------------------------------------------ */
-const FX_WORDS = ['Nice!', 'Step done!', 'Awesome!', 'Great job!', 'On a roll!']
+const FX_WORDS = ['Nice!', 'Awesome!', 'Great job!', 'On a roll!']
 const rnd = (a, b) => a + Math.random() * (b - a)
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
 
@@ -547,9 +562,9 @@ const pctY = (geo, y) => `${(y / geo.H) * 100}%`
 /* class "pop-deco" that anime.js fades / drops in.                     */
 /* ------------------------------------------------------------------ */
 const TONES = [
-  { l: '#e4e9f3', r: '#bcc6dc', t: '#f6f8fc', w: '#7fb6e8', w2: '#9cc9f0' },
-  { l: '#f2e3d0', r: '#d6c0a2', t: '#fcf3e6', w: '#8fc0e4', w2: '#a9d2ee' },
-  { l: '#d4e6f6', r: '#a9c6e2', t: '#e9f3fb', w: '#6aa9e0', w2: '#8ec0ec' },
+  { l: '#eef2fa', r: '#cfd8ea', t: '#fbfcff', w: '#8ec3ee', w2: '#a9d2f3' },
+  { l: '#f8ecda', r: '#e2cfb0', t: '#fffaf0', w: '#9fcbea', w2: '#b6daf1' },
+  { l: '#dcecf9', r: '#b8d1e8', t: '#f0f7fd', w: '#7db6e8', w2: '#9bc9ef' },
 ]
 
 /* an isometric office block: two shaded faces, a roof and rows of windows */
@@ -560,7 +575,7 @@ const Building = ({ h, tone }) => {
   for (let r = 0; r < rows; r++) for (let k = 0; k < 2; k++) win.push([3 + k * 7.5, -h + 7 + r * 13])
   return (
     <>
-      <ellipse cx="0" cy="-8" rx="28" ry="12" fill="#1b3a14" opacity=".16" />
+      <ellipse cx="0" cy="-8" rx="28" ry="12" fill="#1b3a14" opacity=".12" />
       <polygon points={`-18,-9 0,0 0,${-h} -18,${-9 - h}`} fill={c.l} />
       <polygon points={`0,0 18,-9 18,${-9 - h} 0,${-h}`} fill={c.r} />
       <polygon points={`0,${-h} 18,${-9 - h} 0,${-18 - h} -18,${-9 - h}`} fill={c.t} />
@@ -581,13 +596,13 @@ const Building = ({ h, tone }) => {
 
 const IsoHouse = () => (
   <>
-    <ellipse cx="0" cy="-7" rx="25" ry="10" fill="#1b3a14" opacity=".16" />
-    <polygon points="-16,-8 0,0 0,-16 -16,-24" fill="#f5e6d0" />
-    <polygon points="0,0 16,-8 16,-24 0,-16" fill="#d9c4a6" />
-    <polygon points="-20,-26 0,-14 0,-38" fill="#e0574a" />
-    <polygon points="0,-14 20,-26 0,-38" fill="#b8392f" />
-    <polygon points="-5,-2 -5,-11 -1,-9 -1,0" fill="#8a6a45" />
-    <rect x="5" y="-18" width="5" height="6" fill="#9fd0ee" transform="skewY(-26.565) translate(0 0)" />
+    <ellipse cx="0" cy="-7" rx="25" ry="10" fill="#1b3a14" opacity=".12" />
+    <polygon points="-16,-8 0,0 0,-16 -16,-24" fill="#fbefdc" />
+    <polygon points="0,0 16,-8 16,-24 0,-16" fill="#e6d3b6" />
+    <polygon points="-20,-26 0,-14 0,-38" fill="#ee6b5e" />
+    <polygon points="0,-14 20,-26 0,-38" fill="#cc4a40" />
+    <polygon points="-5,-2 -5,-11 -1,-9 -1,0" fill="#9c7a52" />
+    <rect x="5" y="-18" width="5" height="6" fill="#b3dcf4" transform="skewY(-26.565) translate(0 0)" />
   </>
 )
 
@@ -600,35 +615,35 @@ const Deco = ({ type, x, y, h = 64, tone = 0 }) => (
       {type === 'house' && <IsoHouse />}
       {type === 'tree' && (
         <>
-          <ellipse cx="0" cy="24" rx="19" ry="6" fill="#1b3a14" opacity=".18" />
-          <rect x="-3" y="6" width="6" height="18" rx="2" fill="#8a6a45" />
-          <circle cx="0" cy="-4" r="17" fill="#4f9f5a" />
-          <circle cx="-3" cy="-16" r="11" fill="#63b36a" />
-          <circle cx="6" cy="-10" r="5" fill="#7cc983" opacity=".7" />
+          <ellipse cx="0" cy="24" rx="19" ry="6" fill="#1b3a14" opacity=".14" />
+          <rect x="-3" y="6" width="6" height="18" rx="2" fill="#9c7a52" />
+          <circle cx="0" cy="-4" r="17" fill="#5fb06a" />
+          <circle cx="-3" cy="-16" r="11" fill="#74c37b" />
+          <circle cx="6" cy="-10" r="5" fill="#92d998" opacity=".7" />
         </>
       )}
       {type === 'pine' && (
         <>
-          <ellipse cx="0" cy="24" rx="17" ry="5.5" fill="#1b3a14" opacity=".18" />
-          <rect x="-2.5" y="12" width="5" height="12" rx="2" fill="#8a6a45" />
-          <polygon points="0,-30 -16,0 16,0" fill="#3f8f55" />
-          <polygon points="0,-18 -20,12 20,12" fill="#4fa564" />
+          <ellipse cx="0" cy="24" rx="17" ry="5.5" fill="#1b3a14" opacity=".14" />
+          <rect x="-2.5" y="12" width="5" height="12" rx="2" fill="#9c7a52" />
+          <polygon points="0,-30 -16,0 16,0" fill="#4fa064" />
+          <polygon points="0,-18 -20,12 20,12" fill="#63b878" />
         </>
       )}
       {type === 'bush' && (
         <>
-          <ellipse cx="0" cy="22" rx="26" ry="6" fill="#1b3a14" opacity=".16" />
-          <ellipse cx="0" cy="14" rx="26" ry="10" fill="#5fae6a" />
-          <ellipse cx="-12" cy="8" rx="13" ry="10" fill="#4f9f5a" />
-          <ellipse cx="12" cy="9" rx="12" ry="9" fill="#74c27d" />
+          <ellipse cx="0" cy="22" rx="26" ry="6" fill="#1b3a14" opacity=".12" />
+          <ellipse cx="0" cy="14" rx="26" ry="10" fill="#70bf7b" />
+          <ellipse cx="-12" cy="8" rx="13" ry="10" fill="#5fb06a" />
+          <ellipse cx="12" cy="9" rx="12" ry="9" fill="#86d28f" />
         </>
       )}
       {type === 'flowers' && (
         <>
-          <ellipse cx="0" cy="18" rx="24" ry="7" fill="#74c27d" />
+          <ellipse cx="0" cy="18" rx="24" ry="7" fill="#86d28f" />
           {[-14, -3, 9, 17].map((fx, k) => (
             <g key={fx} transform={`translate(${fx} ${10 - (k % 2) * 6})`}>
-              <line x1="0" y1="0" x2="0" y2="10" stroke="#3f8f55" strokeWidth="2" />
+              <line x1="0" y1="0" x2="0" y2="10" stroke="#4fa064" strokeWidth="2" />
               <circle r="4.5" fill={['#e0404a', '#f2c230', '#8b5cf6', '#2f80e0'][k]} />
               <circle r="1.7" fill="#fff9ea" />
             </g>
@@ -637,8 +652,8 @@ const Deco = ({ type, x, y, h = 64, tone = 0 }) => (
       )}
       {type === 'lake' && (
         <>
-          <ellipse cx="0" cy="0" rx="54" ry="19" fill="#8ec9ea" stroke="#6fb6dc" strokeWidth="2.5" />
-          <ellipse cx="-8" cy="-3" rx="38" ry="11" fill="#b9e1f5" opacity=".8" />
+          <ellipse cx="0" cy="0" rx="54" ry="19" fill="#a3d6f0" stroke="#82c2e6" strokeWidth="2.5" />
+          <ellipse cx="-8" cy="-3" rx="38" ry="11" fill="#cdeafa" opacity=".85" />
           <path d="M -30 -2 q 8 -5 16 0 M 0 5 q 8 -5 16 0 M 14 -6 q 8 -5 16 0" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
             <animate attributeName="opacity" values=".4;1;.4" dur="3s" repeatCount="indefinite" />
           </path>
@@ -655,9 +670,9 @@ const Cloud = ({ x, y, s = 1, dur = 18, drift = 26, rm }) => (
         {!rm && (
           <animateTransform attributeName="transform" type="translate" values={`0 0;${drift} 0;0 0`} dur={`${dur}s`} repeatCount="indefinite" />
         )}
-        <ellipse cx="0" cy="0" rx="28" ry="11" fill="#fff" fillOpacity=".95" />
-        <ellipse cx="-15" cy="-6" rx="14" ry="10" fill="#fff" fillOpacity=".95" />
-        <ellipse cx="10" cy="-9" rx="17" ry="12" fill="#fff" fillOpacity=".95" />
+        <ellipse cx="0" cy="0" rx="28" ry="11" fill="#fff" fillOpacity=".97" />
+        <ellipse cx="-15" cy="-6" rx="14" ry="10" fill="#fff" fillOpacity=".97" />
+        <ellipse cx="10" cy="-9" rx="17" ry="12" fill="#fff" fillOpacity=".97" />
       </g>
     </g>
   </g>
@@ -676,7 +691,7 @@ const Birds = ({ x, y, dist, rm }) => (
             d="M 0 0 q 5 -7 10 0 q 5 -7 10 0"
             transform={`translate(${bx} ${k % 2 ? 8 : 0})`}
             fill="none"
-            stroke="#5b6b86"
+            stroke="#a8864f"
             strokeWidth="2"
             strokeLinecap="round"
           />
@@ -692,11 +707,27 @@ const Sun = ({ x, y, rm }) => (
       <g>
         {!rm && <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="60s" repeatCount="indefinite" />}
         {Array.from({ length: 12 }).map((_, k) => (
-          <line key={k} x1="0" y1="-26" x2="0" y2="-35" stroke="#f2c230" strokeWidth="3" strokeLinecap="round" transform={`rotate(${k * 30})`} />
+          <line key={k} x1="0" y1="-26" x2="0" y2="-35" stroke="#f7c948" strokeWidth="3" strokeLinecap="round" transform={`rotate(${k * 30})`} />
         ))}
       </g>
-      <circle r="19" fill="#f7d56b" />
-      <circle r="19" fill="none" stroke="#f2c230" strokeWidth="2" />
+      <circle r="19" fill="#fbe08a" />
+      <circle r="19" fill="none" stroke="#f7c948" strokeWidth="2" />
+    </g>
+  </g>
+)
+
+/* a compass rose in the corner, like an old treasure map */
+const Compass = ({ x, y }) => (
+  <g transform={`translate(${rd(x)} ${rd(y)})`}>
+    <g className="pop-deco" style={HIDDEN}>
+      <circle r="24" fill="#fff6e3" stroke="#c9ab75" strokeWidth="2.5" />
+      <circle r="19" fill="none" stroke="#e3d0a8" strokeWidth="1.2" strokeDasharray="2 3" />
+      <polygon points="0,-18 5,0 0,18 -5,0" fill="#d9b97c" />
+      <polygon points="-18,0 0,-5 18,0 0,5" fill="#ecd9ae" />
+      <circle r="2.4" fill="#fff6e3" stroke="#c9ab75" strokeWidth="1" />
+      <text y="-30" textAnchor="middle" fontSize="11" fontWeight="800" fill="#a8864f" fontFamily="system-ui,sans-serif">
+        N
+      </text>
     </g>
   </g>
 )
@@ -851,24 +882,25 @@ const Backdrop = ({ geo, decor, rm }) => {
     <>
       <defs>
         <linearGradient id="rm-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#9fd3f3" />
-          <stop offset="1" stopColor="#eaf6fd" />
+          <stop offset="0" stopColor="#c9e9fb" />
+          <stop offset=".6" stopColor="#eef8fd" />
+          <stop offset="1" stopColor="#fff6e3" />
         </linearGradient>
         <linearGradient id="rm-top" x1="0" y1="0" x2="0.2" y2="1">
-          <stop offset="0" stopColor="#b4e48a" />
-          <stop offset="1" stopColor="#7cc157" />
+          <stop offset="0" stopColor="#d3f2ae" />
+          <stop offset="1" stopColor="#a9de83" />
         </linearGradient>
         <linearGradient id="rm-front" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#8d5c3b" />
-          <stop offset="1" stopColor="#5a3826" />
+          <stop offset="0" stopColor="#e9cca4" />
+          <stop offset="1" stopColor="#c99d70" />
         </linearGradient>
         <linearGradient id="rm-right" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#744730" />
-          <stop offset="1" stopColor="#47291b" />
+          <stop offset="0" stopColor="#d9b88f" />
+          <stop offset="1" stopColor="#b48a5e" />
         </linearGradient>
         <linearGradient id="rm-water" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#b9e1f5" />
-          <stop offset="1" stopColor="#7fbfe6" />
+          <stop offset="0" stopColor="#cdeafa" />
+          <stop offset="1" stopColor="#94cdee" />
         </linearGradient>
         <clipPath id="rm-top-clip">
           <polygon points={top} />
@@ -877,8 +909,12 @@ const Backdrop = ({ geo, decor, rm }) => {
 
       <rect width={W} height={H} fill="url(#rm-sky)" />
 
+      {/* parchment frame */}
+      <rect x="8" y="8" width={W - 16} height={H - 16} rx="26" fill="none" stroke="#d6bf94" strokeWidth="2.5" strokeDasharray="8 7" opacity=".9" />
+
       {/* sky */}
       <Sun x={mode === 'land' ? 96 : 62} y={46} rm={rm} />
+      <Compass x={W - 56} y={58} />
       {mode === 'land' ? (
         <>
           <Cloud x={W * 0.22} y={44} s={1.1} dur={20} rm={rm} />
@@ -888,7 +924,7 @@ const Backdrop = ({ geo, decor, rm }) => {
         </>
       ) : (
         <>
-          <Cloud x={W * 0.7} y={44} s={1} dur={20} drift={20} rm={rm} />
+          <Cloud x={W * 0.62} y={44} s={1} dur={20} drift={20} rm={rm} />
           <Cloud x={W * 0.38} y={78} s={0.85} dur={24} drift={-24} rm={rm} />
           <Birds x={W * 0.45} y={84} dist={120} rm={rm} />
         </>
@@ -906,8 +942,8 @@ const Backdrop = ({ geo, decor, rm }) => {
             y1={s.bl.y + e.y * t}
             x2={s.br.x + e.x * t}
             y2={s.br.y + e.y * t}
-            stroke="#3b2316"
-            strokeOpacity=".35"
+            stroke="#8a5a35"
+            strokeOpacity=".25"
             strokeWidth="2"
           />
         ))}
@@ -917,20 +953,20 @@ const Backdrop = ({ geo, decor, rm }) => {
         <g clipPath="url(#rm-top-clip)">
           {patches.map(([fx, fy, r], k) => {
             const q = proj({ x: LW * fx, y: LH * fy })
-            return <ellipse key={k} cx={q.x} cy={q.y} rx={r} ry={r * 0.28} fill="#c4f09c" opacity=".38" />
+            return <ellipse key={k} cx={q.x} cy={q.y} rx={r} ry={r * 0.28} fill="#e6fbc9" opacity=".5" />
           })}
 
           {/* the river */}
-          <path d={river.d} fill="none" stroke="#6fb6dc" strokeWidth="30" strokeLinejoin="round" />
-          <path d={river.d} fill="none" stroke="#8ec9ea" strokeWidth="25" strokeLinejoin="round" />
-          <path d={river.d} fill="none" stroke="#b9e1f5" strokeWidth="14" strokeLinejoin="round" />
-          <path d={river.d} fill="none" stroke="#fff" strokeOpacity=".75" strokeWidth="2.4" strokeDasharray="6 18" strokeLinecap="round">
+          <path d={river.d} fill="none" stroke="#82c2e6" strokeWidth="30" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#a3d6f0" strokeWidth="25" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#cdeafa" strokeWidth="14" strokeLinejoin="round" />
+          <path d={river.d} fill="none" stroke="#fff" strokeOpacity=".8" strokeWidth="2.4" strokeDasharray="6 18" strokeLinecap="round">
             {!rm && <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1.4s" repeatCount="indefinite" />}
           </path>
         </g>
 
         {/* grass lip and the white fence along the back */}
-        <path d={lip} fill="none" stroke="#5f9f3d" strokeWidth="6" strokeLinejoin="round" strokeLinecap="round" />
+        <path d={lip} fill="none" stroke="#8fcf66" strokeWidth="6" strokeLinejoin="round" strokeLinecap="round" />
         <path d={fence} fill="none" stroke="#fff" strokeWidth="9" strokeDasharray="2.5 11" />
         <path d={fence} fill="none" stroke="#fff" strokeWidth="2" transform="translate(0 -2)" />
 
@@ -1210,6 +1246,13 @@ const UserRoadMap = () => {
   const [previewing, setPreviewing] = useState(() => !reducedMotion())
   const [previewRun, setPreviewRun] = useState(0)
 
+  /* loader: stays up until the roadmap is in (or failed) AND its finish animation has played */
+  const [showLoader, setShowLoader] = useState(true)
+  const [cachedMbti] = useState(getCachedMbti)
+
+  /* the map's animations (and the cheering character) wait until the loader has finished and is gone */
+  const animReady = status === 'ready' && !showLoader
+
   /* animation refs */
   const mapRef = useRef(null)
   const stripRef = useRef(null) // the sideways scroller on desktop
@@ -1267,6 +1310,11 @@ const UserRoadMap = () => {
       cancelled = true
     }
   }, [state?.predictionId])
+
+  /* remember the type so the loader's character can show immediately next visit */
+  useEffect(() => {
+    cacheMbti(pred?.mbti)
+  }, [pred?.mbti])
 
   /* checklist progress, remembered per prediction + career.
      Keys are the step's index in the original list, so saved progress keeps working. */
@@ -1451,9 +1499,10 @@ const UserRoadMap = () => {
     if (el) animate(el, { scale: [1, 1.4, 1], duration: 520, ease: 'outBack' })
   }
 
-  /* 1. entrance: the island fades in, the road builds itself, scenery drops in and stops pop up one after another */
+  /* 1. entrance: the island fades in, the road builds itself, scenery drops in and stops pop up one after another.
+        Waits for the loader to be gone (animReady). */
   useEffect(() => {
-    if (status !== 'ready' || !geo || !mapRef.current) return
+    if (!animReady || !geo || !mapRef.current) return
     const root = mapRef.current
     const q = (sel) => Array.from(root.querySelectorAll(sel))
     const nodes = q('.pop-node')
@@ -1536,12 +1585,13 @@ const UserRoadMap = () => {
       clearTimeout(fallback)
       runs.forEach((a) => a.pause())
     }
-  }, [status, geo])
+  }, [animReady, geo])
 
-  /* 1b. the preview: the character flies down the whole main route (a yellow trail draws behind it,
-         each stop bumps as it passes), then the normal "walk to your step" effect takes over */
+  /* 1b. the preview: the character walks down the whole main route (a yellow trail draws behind it,
+         each stop bumps as it passes), then the normal "walk to your step" effect takes over.
+         Waits for the loader to be gone (animReady). */
   useEffect(() => {
-    if (status !== 'ready') return
+    if (!animReady) return
     if (!geo || reducedMotion()) {
       setPreviewing(false)
       return
@@ -1631,11 +1681,11 @@ const UserRoadMap = () => {
       fade?.pause()
       skipRef.current = null
     }
-  }, [status, geo, previewRun])
+  }, [animReady, geo, previewRun])
 
   /* 2. the traveled route draws itself up to the last finished main step */
   useEffect(() => {
-    if (status !== 'ready' || !geo) return
+    if (!animReady || !geo) return
     const st = trailF.current
     trailAnim.current?.pause()
     if (previewing) return // wait until the preview is over
@@ -1657,13 +1707,13 @@ const UserRoadMap = () => {
         introDone.current.trail = true
       },
     })
-  }, [status, geo, trailTarget, previewing])
+  }, [animReady, geo, trailTarget, previewing])
 
   /* 3. the character walks to the step in focus.
         Main step: along the main route. Optional step: along the main route to its branch point,
         then up the side path. Switching between paths walks back through the branch point. */
   useEffect(() => {
-    if (status !== 'ready' || !geo || previewing) return
+    if (!animReady || !geo || previewing) return
     const w = plan.where[active]
     if (!w) return
     const st = charS.current
@@ -1748,11 +1798,11 @@ const UserRoadMap = () => {
       anims.forEach((a) => a.pause())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, geo, plan, active, previewing])
+  }, [animReady, geo, plan, active, previewing])
 
   /* 4. idle bob for the character */
   useEffect(() => {
-    if (status !== 'ready' || !bobRef.current || reducedMotion()) return
+    if (!animReady || !bobRef.current || reducedMotion()) return
     const a = animate(bobRef.current, {
       translateY: [-4, 3],
       duration: 800,
@@ -1761,11 +1811,11 @@ const UserRoadMap = () => {
       ease: 'inOutSine',
     })
     return () => a.pause()
-  }, [status, geo])
+  }, [animReady, geo])
 
   /* 5. pulse ring on the stop in focus */
   useEffect(() => {
-    if (status !== 'ready' || !mapRef.current || reducedMotion()) return
+    if (!animReady || !mapRef.current || reducedMotion()) return
     const rings = Array.from(mapRef.current.querySelectorAll('.pulse-ring'))
     if (!rings.length) return
     const a = animate(rings, {
@@ -1776,12 +1826,13 @@ const UserRoadMap = () => {
       ease: 'outQuad',
     })
     return () => a.pause()
-  }, [status, geo, active])
+  }, [animReady, geo, active])
 
   /* 6. the big celebration when the last main step is finished:
-        a huge burst at the goal, confetti raining over the whole map and fireworks going off one after another */
+        a huge burst at the goal, confetti raining over the whole map and fireworks going off one after another.
+        prevAllDone is first recorded once the loader is gone, so opening an already finished roadmap doesn't fire it. */
   useEffect(() => {
-    if (status !== 'ready' || !mapRef.current) return
+    if (!animReady || !mapRef.current) return
     const justFinished = prevAllDone.current === false && allDone
     prevAllDone.current = allDone
     if (!justFinished || reducedMotion()) return
@@ -1803,29 +1854,51 @@ const UserRoadMap = () => {
     if (flag) animate(flag, { scale: [1, 1.5, 1], duration: 700, ease: 'outBack' })
 
     return () => timers.forEach(clearTimeout)
-  }, [status, allDone])
+  }, [animReady, allDone])
+
+  /* the build loader with your own MBTI character: ready as soon as the roadmap loaded (or failed) */
+  const loader = showLoader ? (
+    <PageLoader
+      mbti={pred?.mbti || cachedMbti}
+      ready={status !== 'loading'}
+      onFinished={() => setShowLoader(false)}
+      lines={ROAD_LINES}
+      title={(t, code) => (t ? `Building the road for your ${code}` : 'Building your roadmap')}
+      doneTitle={(t, code) => (t ? `${code} · ${t.name}, your road is ready!` : 'Your road is ready!')}
+    />
+  ) : null
 
   /* ---- early returns ---- */
-  if (status === 'loading') return <div className="text-base text-neutral-500">Loading roadmap...</div>
+  if (status === 'loading') {
+    return (
+      <>
+        <div className="min-h-[60vh]" />
+        {loader}
+      </>
+    )
+  }
 
   if (status === 'blocked') {
     return (
-      <div className="space-y-4">
-        <h1 className="text-3xl font-black tracking-tight text-black">Career roadmap</h1>
-        <div className="text-base text-neutral-600">
-          {message === 'No predictions yet'
-            ? 'You have no predictions yet. Take the assessment first.'
-            : message.startsWith('Select a career')
-              ? 'You haven’t selected a career yet. Pick one from your top 3 on the dashboard to see its roadmap.'
-              : message}
+      <>
+        <div className="space-y-4">
+          <h1 className="text-3xl font-black tracking-tight text-black">Career roadmap</h1>
+          <div className="text-base text-neutral-600">
+            {message === 'No predictions yet'
+              ? 'You have no predictions yet. Take the assessment first.'
+              : message.startsWith('Select a career')
+                ? 'You haven’t selected a career yet. Pick one from your top 3 on the dashboard to see its roadmap.'
+                : message}
+          </div>
+          <Link
+            to={BACK}
+            className="inline-block rounded-full bg-[#0b0b2b] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a]"
+          >
+            Go to dashboard
+          </Link>
         </div>
-        <Link
-          to={BACK}
-          className="inline-block rounded-full bg-[#0b0b2b] px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a]"
-        >
-          Go to dashboard
-        </Link>
-      </div>
+        {loader}
+      </>
     )
   }
 
@@ -1897,7 +1970,7 @@ const UserRoadMap = () => {
           d={geo.d}
           fill="none"
           stroke="#1b3a14"
-          strokeOpacity=".2"
+          strokeOpacity=".12"
           strokeWidth="36"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -1909,7 +1982,7 @@ const UserRoadMap = () => {
           d={geo.d}
           pathLength="1000"
           fill="none"
-          stroke="#9aa0b0"
+          stroke="#d6dcea"
           strokeWidth="36"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -1922,7 +1995,7 @@ const UserRoadMap = () => {
           d={geo.d}
           pathLength="1000"
           fill="none"
-          stroke="#4b4f5c"
+          stroke="#8a91a6"
           strokeWidth="29"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -1942,11 +2015,11 @@ const UserRoadMap = () => {
                 className="base-trail"
                 d={br.d}
                 fill="none"
-                stroke="#efe6ff"
+                stroke="#f3edff"
                 strokeWidth="15"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                opacity=".9"
+                opacity=".95"
                 style={HIDDEN}
               />
               <path
@@ -1980,51 +2053,52 @@ const UserRoadMap = () => {
 
         {/* the bridge where the road crosses the river */}
         <g className="base-trail" style={HIDDEN}>
-          <path d={geo.bridge} fill="none" stroke="#f1f2f6" strokeWidth="44" strokeLinecap="butt" />
-          <path d={geo.bridge} fill="none" stroke="#9aa0b0" strokeWidth="38" strokeLinecap="butt" />
-          <path d={geo.bridge} fill="none" stroke="#4b4f5c" strokeWidth="29" strokeLinecap="butt" />
+          <path d={geo.bridge} fill="none" stroke="#fbfcfe" strokeWidth="44" strokeLinecap="butt" />
+          <path d={geo.bridge} fill="none" stroke="#d6dcea" strokeWidth="38" strokeLinecap="butt" />
+          <path d={geo.bridge} fill="none" stroke="#8a91a6" strokeWidth="29" strokeLinecap="butt" />
         </g>
 
-        {/* white dashes down the middle of the road */}
+        {/* a dotted line down the middle of the road, like a treasure map trail */}
         <path
           className="base-trail"
           d={geo.d}
           fill="none"
           stroke="#fff"
-          strokeOpacity=".9"
-          strokeWidth="2.6"
-          strokeDasharray="9 11"
+          strokeOpacity=".95"
+          strokeWidth="3.4"
+          strokeDasharray="0.1 11"
+          strokeLinecap="round"
           style={HIDDEN}
         />
 
         {/* round pads under the start, every stop and the goal */}
         <g className="pop-deco" style={HIDDEN}>
-          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="40" ry="20" fill="#cfd3dc" stroke="#9aa0b0" strokeWidth="2.5" />
-          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="30" ry="15" fill="#e4e7ee" />
+          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="40" ry="20" fill="#e3e7f0" stroke="#bcc3d4" strokeWidth="2.5" />
+          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="30" ry="15" fill="#f3f5fa" />
         </g>
         {geo.nodes.map((nd, k) => (
           <g key={`pad-${k}`} className="pop-deco" style={HIDDEN}>
-            <ellipse cx={nd.x} cy={nd.y + 2} rx="30" ry="15" fill="#eceef3" stroke="#a3a8b6" strokeWidth="2" />
+            <ellipse cx={nd.x} cy={nd.y + 2} rx="30" ry="15" fill="#f7f8fc" stroke="#c3c8d6" strokeWidth="2" />
           </g>
         ))}
         {Object.values(geo.branches).flatMap((br, k) =>
           br.nodes.map((nd, j) => (
             <g key={`sidepad-${k}-${j}`} className="pop-deco" style={HIDDEN}>
-              <ellipse cx={nd.x} cy={nd.y + 2} rx="24" ry="12" fill="#f3edff" stroke={SIDE} strokeWidth="2" strokeDasharray="4 3" />
+              <ellipse cx={nd.x} cy={nd.y + 2} rx="24" ry="12" fill="#f8f4ff" stroke={SIDE} strokeWidth="2" strokeDasharray="4 3" />
             </g>
           ))
         )}
         <g className="pop-deco" style={HIDDEN}>
-          <ellipse cx={geo.end.x} cy={geo.end.y + 2} rx="40" ry="20" fill="#e6e9ef" stroke="#9aa0b0" strokeWidth="2.5" />
+          <ellipse cx={geo.end.x} cy={geo.end.y + 2} rx="40" ry="20" fill="#eef0f5" stroke="#bcc3d4" strokeWidth="2.5" />
         </g>
 
-        {/* preview trail: drawn once while the character flies down the route, then fades out */}
+        {/* preview trail: drawn once while the character walks the route, then fades out */}
         <path
           ref={previewRef}
           d={geo.d}
           pathLength="1000"
           fill="none"
-          stroke="#f2c230"
+          stroke="#f7c948"
           strokeWidth="9"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -2055,7 +2129,7 @@ const UserRoadMap = () => {
       </svg>
 
       {/* small badge while the preview is playing */}
-      {previewing && (
+      {previewing && animReady && (
         <div
           className="pointer-events-none absolute left-3 top-3 z-30 flex items-center gap-2 rounded-full bg-[#0b0b2b]/90 px-3 py-1.5 text-[11px] font-bold text-white shadow-md"
           role="status"
@@ -2406,7 +2480,7 @@ const UserRoadMap = () => {
             {sideTotal > 0 && (
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[#e6d8c3] pt-3 text-[12px] font-bold text-neutral-600">
                 <span className="flex items-center gap-2">
-                  <span className="inline-block h-[10px] w-8 rounded-full bg-[#4b4f5c]" aria-hidden="true" />
+                  <span className="inline-block h-[10px] w-8 rounded-full bg-[#8a91a6]" aria-hidden="true" />
                   Main road
                 </span>
                 <span className="flex items-center gap-2">
@@ -2432,7 +2506,8 @@ const UserRoadMap = () => {
 
             {/* FOCUS CARD + CHEER CHARACTER */}
             <aside className="sticky bottom-3 z-30 min-w-0">
-              {theme && (
+              {/* mounted only once the loader is gone, so its greeting bubble and timers start when the person can actually see them */}
+              {theme && !showLoader && (
                 <MiniCheer
                   code={pred.mbti}
                   theme={theme}
@@ -2685,6 +2760,9 @@ const UserRoadMap = () => {
           + New prediction
         </Link>
       </div>
+
+      {/* the loader finishing its animation on top of the ready page (fixed overlay) */}
+      {loader}
     </div>
   )
 }

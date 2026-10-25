@@ -3,10 +3,18 @@ import { Link } from 'react-router-dom'
 import { FaCheckCircle } from 'react-icons/fa'
 import * as predApi from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
+import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoader'
 
 const { listPredictions, getLatestPrediction, getRoadmap } = predApi
 
 const RANK_COLORS = ['#2f80e0', '#f2c230', '#e0404a']
+
+const DASH_LINES = [
+  'Finding your latest prediction...',
+  'Loading your top career matches...',
+  'Checking your roadmap progress...',
+  'Putting your dashboard together...',
+]
 
 const list = (value) => (Array.isArray(value) ? value : [])
 const str = (value) => (typeof value === 'string' ? value : '')
@@ -36,6 +44,35 @@ const fmtDate = (date) => {
     : parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+const reducedMotion = () =>
+  typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+/* counts from 0 up to target, but only once `play` is true (i.e. after the loader is gone) */
+const useCountUp = (target, play, ms = 900) => {
+  const [v, setV] = useState(0)
+  useEffect(() => {
+    if (!play) {
+      setV(0)
+      return undefined
+    }
+    if (reducedMotion()) {
+      setV(target)
+      return undefined
+    }
+    let raf = 0
+    let start = null
+    const step = (t) => {
+      if (start === null) start = t
+      const k = Math.min(1, (t - start) / ms)
+      setV(Math.round(target * (1 - Math.pow(1 - k, 3))))
+      if (k < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target, play, ms])
+  return v
+}
+
 const Check = () => (
   <FaCheckCircle
     className="mt-0.5 h-4 w-4 shrink-0 text-[#2f9e62]"
@@ -55,14 +92,28 @@ const RankBadge = ({ index }) => (
   </span>
 )
 
-const MatchBar = ({ value, color = '#2f80e0' }) => (
-  <div className="h-2 overflow-hidden rounded-full bg-[#e8dcc8]">
-    <div
-      className="h-full rounded-full transition-all duration-300"
-      style={{ width: `${Math.max(0, Math.min(100, Number(value) || 0))}%`, background: color }}
-    />
-  </div>
-)
+/* the bar sits at 0 until `play` is true, then fills up (so it fills after the loader, not behind it) */
+const MatchBar = ({ value, color = '#2f80e0', play = true }) => {
+  const target = Math.max(0, Math.min(100, Number(value) || 0))
+  const [w, setW] = useState(0)
+  useEffect(() => {
+    if (!play) {
+      setW(0)
+      return undefined
+    }
+    const id = requestAnimationFrame(() => setW(target))
+    return () => cancelAnimationFrame(id)
+  }, [play, target])
+
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-[#e8dcc8]">
+      <div
+        className="h-full rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none"
+        style={{ width: `${w}%`, background: color }}
+      />
+    </div>
+  )
+}
 
 const Label = ({ children, className = 'text-neutral-500' }) => (
   <div className={`text-xs font-bold uppercase tracking-wide ${className}`}>{children}</div>
@@ -97,6 +148,14 @@ const UserDashboard = () => {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  /* loader: stays up until the data is in AND its finish animation has played */
+  const [loaded, setLoaded] = useState(false)
+  const [showLoader, setShowLoader] = useState(true)
+  const [cachedMbti] = useState(getCachedMbti)
+
+  /* every animation on this page waits for this: true only once the loader is completely gone */
+  const play = loaded && !showLoader
+
   useEffect(() => {
     let cancelled = false
 
@@ -125,6 +184,8 @@ const UserDashboard = () => {
         }
       } catch (err) {
         if (!cancelled) setError(err?.message || 'Unable to load your predictions.')
+      } finally {
+        if (!cancelled) setLoaded(true)
       }
     }
 
@@ -185,6 +246,12 @@ const UserDashboard = () => {
   const mbti = pred?.mbti ?? data?.predictions?.[0]?.mbti
   const theme = mbtiTheme(mbti)
 
+  /* the loader's character: live type once known, otherwise the one remembered from last visit */
+  const loaderMbti = mbti || cachedMbti
+  useEffect(() => {
+    cacheMbti(mbti)
+  }, [mbti])
+
   const reasons = list(currentCareer?.reasons ?? currentCareer?.whyFit).map(text).filter(Boolean)
 
   const fallbackReason =
@@ -204,6 +271,9 @@ const UserDashboard = () => {
     ? Math.min(100, Math.round((completedCount / steps.length) * 100))
     : 0
 
+  /* the roadmap ring and its number count up after the loader */
+  const shownProgress = useCountUp(progress, play)
+
   const nextIndex = steps.findIndex((_, index) => !done.includes(String(index)))
   const nextStep = nextIndex >= 0 ? text(steps[nextIndex]) : 'All steps completed. Nice work!'
 
@@ -216,11 +286,32 @@ const UserDashboard = () => {
     pred?.createdAt ?? pred?.created_at ?? pred?.predictionDate ?? pred?.prediction_date
   )
 
+  /* entrance: each block stays invisible while the loader is up, then rises in one after another.
+     n is the order (0 = first). */
+  const rise = (n = 0) =>
+    play ? { animation: `dashRise .6s cubic-bezier(.2,.7,.3,1) ${n * 110}ms both` } : { opacity: 0 }
+
   return (
     <main className="min-h-screen bg-[#f3e6d3] px-4 py-8 sm:px-6 lg:px-8">
+      <style>{`
+        @keyframes dashRise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .dash-rise { animation: none !important; opacity: 1 !important; transform: none !important; } }
+      `}</style>
+
+      {showLoader && (
+        <PageLoader
+          mbti={loaderMbti}
+          ready={loaded}
+          onFinished={() => setShowLoader(false)}
+          lines={DASH_LINES}
+          title={(t, code) => (t ? `Loading your ${code} dashboard` : 'Loading your dashboard')}
+          doneTitle={(t, code) => (t ? `${code} · ${t.name}, you’re all set!` : 'Your dashboard is ready!')}
+        />
+      )}
+
       <div className="mx-auto w-full max-w-[1120px] space-y-6">
         {/* Page heading */}
-        <header className="flex flex-wrap items-start justify-between gap-4">
+        <header className="dash-rise flex flex-wrap items-start justify-between gap-4" style={rise(0)}>
           <div className="min-w-0">
             <h1 className="text-3xl font-black tracking-tight text-black sm:text-4xl">
               Your top 3 careers
@@ -250,16 +341,11 @@ const UserDashboard = () => {
           </div>
         )}
 
-        {!data && !error && (
-          <div className="py-12 text-center text-sm text-neutral-500">Loading your prediction...</div>
-        )}
-
-        {data && !pred && data?.predictions?.length > 0 && (
-          <div className="py-8 text-sm text-neutral-500">Loading your career recommendations...</div>
-        )}
-
         {data && !data?.predictions?.length && (
-          <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-8 text-center">
+          <section
+            className="dash-rise rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-8 text-center"
+            style={rise(1)}
+          >
             <h2 className="text-xl font-extrabold text-black">No predictions yet</h2>
             <div className="mt-2 text-sm text-neutral-600">
               Complete your assessment to see your top career matches.
@@ -280,13 +366,14 @@ const UserDashboard = () => {
               {/* LEFT: profile + roadmap progress */}
               <aside className="flex min-w-0 flex-col gap-4">
                 <section
-                  className="flex flex-1 flex-col justify-center rounded-3xl p-5 shadow-sm"
-                  style={{ background: theme?.tint ?? '#cde6f6' }}
+                  className="dash-rise flex flex-1 flex-col justify-center rounded-3xl p-5 shadow-sm"
+                  style={{ background: theme?.tint ?? '#cde6f6', ...rise(1) }}
                 >
                   <div className="flex flex-col items-center gap-3 text-center">
                     {theme && (
                       <div className="w-56 shrink-0 sm:w-64 lg:w-40">
-                        <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />
+                        {/* mounted only after the loader, so the character's own intro animation plays when you can see it */}
+                        {play && <MbtiCharacter code={mbti} className="mx-auto w-full drop-shadow-md" />}
                       </div>
                     )}
 
@@ -309,7 +396,10 @@ const UserDashboard = () => {
                 </section>
 
                 {/* Roadmap progress card */}
-                <section className="rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm">
+                <section
+                  className="dash-rise rounded-3xl bg-[#0b0b2b] p-5 text-white shadow-sm"
+                  style={rise(2)}
+                >
                   <Label className="text-[#8fb8ff]">Your roadmap</Label>
 
                   {hasRoad ? (
@@ -322,11 +412,11 @@ const UserDashboard = () => {
                         <div
                           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
                           style={{
-                            background: `conic-gradient(#5aa9ff ${progress * 3.6}deg, rgba(255,255,255,.16) 0deg)`,
+                            background: `conic-gradient(#5aa9ff ${shownProgress * 3.6}deg, rgba(255,255,255,.16) 0deg)`,
                           }}
                         >
                           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0b0b2b] text-xs font-extrabold">
-                            {progress}%
+                            {shownProgress}%
                           </div>
                         </div>
 
@@ -357,7 +447,7 @@ const UserDashboard = () => {
               </aside>
 
               {/* RIGHT: careers */}
-              <div className="flex min-w-0 flex-col">
+              <div className="dash-rise flex min-w-0 flex-col" style={rise(1)}>
                 {top.length > 0 && currentCareer ? (
                   <div className="flex min-w-0 flex-1 flex-col">
                     {/* Folder tabs */}
@@ -424,7 +514,7 @@ const UserDashboard = () => {
                       </div>
 
                       <div className="mt-4">
-                        <MatchBar value={pct(currentCareer)} color={RANK_COLORS[focus]} />
+                        <MatchBar value={pct(currentCareer)} color={RANK_COLORS[focus]} play={play} />
                       </div>
 
                       <div className="mt-5">
@@ -490,7 +580,11 @@ const UserDashboard = () => {
                             </div>
                           </div>
                           <div className="mt-2">
-                            <MatchBar value={Math.round((have.length / (have.length + need.length)) * 100)} color="#2f9e62" />
+                            <MatchBar
+                              value={Math.round((have.length / (have.length + need.length)) * 100)}
+                              color="#2f9e62"
+                              play={play}
+                            />
                           </div>
                         </div>
                       )}
@@ -552,7 +646,10 @@ const UserDashboard = () => {
 
             {/* Careers to avoid: always visible, titles only, full width */}
             {avoid.length > 0 && (
-              <section className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6">
+              <section
+                className="dash-rise rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6"
+                style={rise(3)}
+              >
                 <h2 className="text-base font-extrabold text-black">Careers to avoid</h2>
                 <div className="text-sm text-neutral-500">
                   Fields that may be a weaker fit for this profile
@@ -574,7 +671,10 @@ const UserDashboard = () => {
               </section>
             )}
 
-            <footer className="pb-4 text-xs leading-relaxed text-neutral-500">
+            <footer
+              className="dash-rise pb-4 text-xs leading-relaxed text-neutral-500"
+              style={rise(4)}
+            >
               Suggestions are based on your personality type, skills, and education. Use them as a
               guide, not a rule.
             </footer>
