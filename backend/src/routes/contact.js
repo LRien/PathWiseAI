@@ -37,15 +37,8 @@ const oneLine = (v) => v.replace(/[\r\n]+/g, ' ')
 
 /* ---------- POST /api/contact ---------- */
 router.post('/', async (req, res) => {
-  console.log('[contact] request from origin:', req.headers.origin || 'none', 'ip:', req.ip)
-
-  const { _honey } = req.body || {}
-
-  // Honeypot: pretend success so bots don't retry
-  if (_honey) {
-    console.warn('[contact] honeypot triggered, value:', JSON.stringify(_honey))
-    return res.json({ ok: true, message: 'Message sent.' })
-  }
+  // No honeypot: browser autofill was filling it and silently dropping real messages.
+  // Any old `_honey` field sent by a cached frontend is simply ignored.
 
   if (rateLimited(req.ip)) {
     console.warn('[contact] rate limited:', req.ip)
@@ -74,7 +67,7 @@ router.post('/', async (req, res) => {
     console.log('[contact] sent for', email)
     res.json({ ok: true, message: 'Message sent.' })
   } catch (err) {
-    console.error('Contact email failed:', err.message)
+    console.error('[contact] FAILED:', err.message)
     res.status(500).json({ ok: false, message: 'Could not send your message. Please try again later.' })
   }
 })
