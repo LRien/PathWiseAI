@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { forgotPassword, resetPassword } from '../../api/auth' // adjust path if needed
 import PasswordChecklist, { isStrongPassword, PASSWORD_RULES_MESSAGE } from './PasswordChecklist'
+import { MIN_SPIN_MS, Spinner, popSuccess, rumble, shake, wait } from './codeAnimation' // adjust path if needed
 
 const EyeIcon = ({ off }) => (
   <svg
@@ -31,7 +32,7 @@ const inputClass = `w-full rounded-2xl border border-[#E2D6C3] bg-[#F3EADB] px-4
 const labelClass = 'mb-2 block text-sm font-semibold text-[#0A0A2C]'
 
 const primaryBtnClass =
-  'w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60'
+  'flex w-full items-center justify-center gap-2 rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60'
 
 const PasswordField = ({ id, label, value, onChange, show, onToggle, autoComplete, placeholder }) => (
   <div>
@@ -79,16 +80,26 @@ const ForgotPasswordPage = () => {
   const [confirm, setConfirm] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [rumbling, setRumbling] = useState(false) // step 2: code box rumbles
+  const [loading, setLoading] = useState(false) // spinner while the request runs
+  const [success, setSuccess] = useState(false) // check mark before leaving
   const [error, setError] = useState('')
   const [info, setInfo] = useState(fromLink ? 'Link verified. Choose your new password below.' : '')
   const [cooldown, setCooldown] = useState(0)
+
+  const codeRef = useRef(null)
+  const buttonRef = useRef(null)
 
   useEffect(() => {
     if (cooldown <= 0) return
     const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
     return () => clearTimeout(t)
   }, [cooldown])
+
+  // Wrong code / any error on step 2: shake the code box
+  useEffect(() => {
+    if (error && step === 2) shake(codeRef.current)
+  }, [error, step])
 
   const cleanEmail = email.trim().toLowerCase()
 
@@ -141,9 +152,28 @@ const ForgotPasswordPage = () => {
       return
     }
 
-    setLoading(true)
     try {
-      await resetPassword(cleanEmail, code, newPassword)
+      // Start the request right away, but don't look at the result until the animation has played
+      const request = resetPassword(cleanEmail, code, newPassword).then(
+        (value) => ({ ok: true, value }),
+        (err) => ({ ok: false, err })
+      )
+
+      // 1) rumble the code
+      setRumbling(true)
+      await rumble(codeRef.current)
+      setRumbling(false)
+
+      // 2) spin while loading (at least MIN_SPIN_MS so it never just flashes)
+      setLoading(true)
+      const [result] = await Promise.all([request, wait(MIN_SPIN_MS)])
+      if (!result.ok) throw result.err
+
+      // 3) finish: check mark + pop, then leave
+      setLoading(false)
+      setSuccess(true)
+      await popSuccess([codeRef.current, buttonRef.current])
+
       navigate('/login', {
         state: { message: 'Password updated. Please log in with your new password.' },
       })
@@ -152,11 +182,13 @@ const ForgotPasswordPage = () => {
       if (err.code === 'INVALID_CODE' && err.attemptsLeft !== undefined) {
         msg += ` (${err.attemptsLeft} attempt${err.attemptsLeft === 1 ? '' : 's'} left)`
       }
-      setError(msg || 'Something went wrong. Please try again.')
-    } finally {
+      setRumbling(false)
       setLoading(false)
+      setError(msg || 'Something went wrong. Please try again.')
     }
   }
+
+  const busy = rumbling || loading || success
 
   const errorBox = error && (
     <div
@@ -202,7 +234,14 @@ const ForgotPasswordPage = () => {
             {errorBox}
 
             <button type="submit" disabled={loading} className={primaryBtnClass}>
-              {loading ? 'Sending...' : 'Send Reset Code'}
+              {loading ? (
+                <>
+                  <Spinner />
+                  Sending...
+                </>
+              ) : (
+                'Send Reset Code'
+              )}
             </button>
           </form>
         ) : (
@@ -212,12 +251,14 @@ const ForgotPasswordPage = () => {
                 Reset Code
               </label>
               <input
+                ref={codeRef}
                 id="code"
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={6}
                 required
+                readOnly={busy}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="123456"
@@ -236,7 +277,7 @@ const ForgotPasswordPage = () => {
               placeholder="Create a strong password"
             />
 
-          <PasswordChecklist password={newPassword} />
+            <PasswordChecklist password={newPassword} />
 
             <PasswordField
               id="confirmNewPassword"
@@ -259,27 +300,37 @@ const ForgotPasswordPage = () => {
             )}
             {errorBox}
 
-            <button type="submit" disabled={loading} className={primaryBtnClass}>
-              {loading ? 'Updating...' : 'Reset Password'}
+            <button ref={buttonRef} type="submit" disabled={busy} className={primaryBtnClass}>
+              {success ? (
+                'Password updated ✓'
+              ) : loading ? (
+                <>
+                  <Spinner />
+                  Updating...
+                </>
+              ) : (
+                'Reset Password'
+              )}
             </button>
 
             <div className="flex flex-col items-center gap-2 text-xs text-[#5B564B]">
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={cooldown > 0}
+                disabled={cooldown > 0 || busy}
                 className="font-semibold text-[#0A0A2C] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
               >
                 {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
               </button>
               <button
                 type="button"
+                disabled={busy}
                 onClick={() => {
                   setStep(1)
                   setError('')
                   setInfo('')
                 }}
-                className="hover:underline"
+                className="hover:underline disabled:opacity-50"
               >
                 Use a different email
               </button>

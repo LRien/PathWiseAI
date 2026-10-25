@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { animate, stagger } from 'animejs'
 import { verifyEmail, resendVerification } from '../../api/auth' // adjust path if needed
+import { MIN_SPIN_MS, Spinner, popSuccess, rumble, shake, wait } from './codeAnimation' // adjust path if needed
 
 // Palette: page bg #F0E6D6 | card #FAF6EF | input #F3EADB | border #E2D6C3 | navy #0A0A2C
 const autofillFix =
@@ -21,8 +22,9 @@ const VerifyEmailPage = () => {
 
   const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
+  const [rumbling, setRumbling] = useState(false) // step 1: code box rumbles
+  const [loading, setLoading] = useState(false) // step 2: spinner while verifying
+  const [success, setSuccess] = useState(false) // step 3: check mark
   const [error, setError] = useState('')
   const [info, setInfo] = useState(
     initialEmail
@@ -70,18 +72,7 @@ const VerifyEmailPage = () => {
         ease: 'outQuad',
       })
     }
-    if (codeRef.current) {
-      animate(codeRef.current, {
-        translateX: [
-          { to: -10, duration: 60 },
-          { to: 10, duration: 80 },
-          { to: -6, duration: 60 },
-          { to: 6, duration: 60 },
-          { to: 0, duration: 60 },
-        ],
-        ease: 'inOutSine',
-      })
-    }
+    shake(codeRef.current)
   }, [error])
 
   // Info: fade in
@@ -112,18 +103,6 @@ const VerifyEmailPage = () => {
     prevCodeLen.current = next.length
   }
 
-  const playSuccess = () => {
-    const targets = [codeRef.current, buttonRef.current].filter(Boolean)
-    animate(targets, {
-      scale: [
-        { to: 1.06, duration: 150 },
-        { to: 1, duration: 250 },
-      ],
-      ease: 'outBack',
-    })
-    return new Promise((resolve) => setTimeout(resolve, 600))
-  }
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
@@ -134,13 +113,28 @@ const VerifyEmailPage = () => {
       return
     }
 
-    setLoading(true)
     try {
-      // verifyEmail() saves the token + user when the backend returns them
-      const data = await verifyEmail(email.trim().toLowerCase(), code)
+      // Start the request right away, but don't look at the result until the animation has played
+      const request = verifyEmail(email.trim().toLowerCase(), code).then(
+        (value) => ({ ok: true, value }),
+        (err) => ({ ok: false, err })
+      )
 
+      // 1) rumble the code
+      setRumbling(true)
+      await rumble(codeRef.current)
+      setRumbling(false)
+
+      // 2) spin while loading (at least MIN_SPIN_MS so it never just flashes)
+      setLoading(true)
+      const [result] = await Promise.all([request, wait(MIN_SPIN_MS)])
+      if (!result.ok) throw result.err
+      const data = result.value // verifyEmail() saves the token + user when the backend returns them
+
+      // 3) finish: check mark + pop, then leave
+      setLoading(false)
       setSuccess(true)
-      await playSuccess()
+      await popSuccess([codeRef.current, buttonRef.current])
 
       if (data.token) {
         navigate('/dashboard', { replace: true }) // logged in automatically
@@ -152,9 +146,9 @@ const VerifyEmailPage = () => {
       if (err.code === 'INVALID_CODE' && err.attemptsLeft !== undefined) {
         msg += ` (${err.attemptsLeft} attempt${err.attemptsLeft === 1 ? '' : 's'} left)`
       }
-      setError(msg || 'Something went wrong. Please try again.')
-    } finally {
+      setRumbling(false)
       setLoading(false)
+      setError(msg || 'Something went wrong. Please try again.')
     }
   }
 
@@ -175,6 +169,8 @@ const VerifyEmailPage = () => {
       setError(err.message)
     }
   }
+
+  const busy = rumbling || loading || success
 
   return (
     <div
@@ -223,6 +219,7 @@ const VerifyEmailPage = () => {
               autoComplete="one-time-code"
               maxLength={6}
               required
+              readOnly={busy}
               value={code}
               onChange={handleCodeChange}
               placeholder="123456"
@@ -252,10 +249,19 @@ const VerifyEmailPage = () => {
           <button
             ref={buttonRef}
             type="submit"
-            disabled={loading || success}
-            className="w-full rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={busy}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#0A0A2C] py-3.5 text-sm font-bold text-white transition hover:bg-[#1A1A4A] focus:outline-none focus:ring-2 focus:ring-[#0A0A2C]/40 focus:ring-offset-2 focus:ring-offset-[#FAF6EF] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {success ? 'Verified ✓' : loading ? 'Verifying...' : 'Verify Email'}
+            {success ? (
+              'Verified ✓'
+            ) : loading ? (
+              <>
+                <Spinner />
+                Verifying...
+              </>
+            ) : (
+              'Verify Email'
+            )}
           </button>
         </form>
 
