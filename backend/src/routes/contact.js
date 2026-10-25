@@ -37,12 +37,18 @@ const oneLine = (v) => v.replace(/[\r\n]+/g, ' ')
 
 /* ---------- POST /api/contact ---------- */
 router.post('/', async (req, res) => {
+  console.log('[contact] request from origin:', req.headers.origin || 'none', 'ip:', req.ip)
+
   const { _honey } = req.body || {}
 
   // Honeypot: pretend success so bots don't retry
-  if (_honey) return res.json({ ok: true, message: 'Message sent.' })
+  if (_honey) {
+    console.warn('[contact] honeypot triggered, value:', JSON.stringify(_honey))
+    return res.json({ ok: true, message: 'Message sent.' })
+  }
 
   if (rateLimited(req.ip)) {
+    console.warn('[contact] rate limited:', req.ip)
     return res
       .status(429)
       .json({ ok: false, message: 'Too many messages. Please try again in a few minutes.' })
@@ -65,6 +71,7 @@ router.post('/', async (req, res) => {
 
   try {
     await sendContactMessageEmail({ name, email, subject, message })
+    console.log('[contact] sent for', email)
     res.json({ ok: true, message: 'Message sent.' })
   } catch (err) {
     console.error('Contact email failed:', err.message)
