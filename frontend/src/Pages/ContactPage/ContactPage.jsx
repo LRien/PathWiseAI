@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { sendContactMessage } from '../api/contact' // adjust path to wherever your api folder is
+import { sendContactMessage } from '../../api/contact' // adjust path to wherever your api folder is
 
 const CONTACT_EMAIL = 'careermatchpathwiseai@gmail.com'
 
