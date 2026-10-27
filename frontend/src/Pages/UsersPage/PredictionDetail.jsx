@@ -174,7 +174,7 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) =>
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Top 3 careers" className="grid grid-cols-3 gap-1.5 sm:gap-2">
+      <div role="tablist" aria-label="Top 3 careers" className="grid grid-cols-3 gap-1 sm:gap-2">
         {recs.map((r, i) => {
           const active = focus === i
           return (
@@ -183,23 +183,27 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) =>
               type="button"
               role="tab"
               aria-selected={active}
+              aria-label={r.title}
+              title={r.title}
               onClick={() => setFocus(i)}
-              className={`relative flex min-w-0 flex-col gap-1 rounded-t-2xl border-2 border-b-0 border-[#0b0b2b] px-3 pb-2 pt-3 text-left transition sm:px-4 ${
+              className={`relative flex min-w-0 flex-col gap-1 rounded-t-xl border-2 border-b-0 border-[#0b0b2b] px-2 pb-2 pt-2.5 text-left transition sm:rounded-t-2xl sm:px-4 sm:pt-3 ${
                 active ? 'z-10 -mb-[2px] bg-white' : 'mt-2 bg-[#fff4b8] hover:bg-[#ffee94]'
               }`}
             >
               <span
                 aria-hidden="true"
-                className="h-1.5 w-10 rounded-full"
+                className="h-1 w-8 rounded-full sm:h-1.5 sm:w-10"
                 style={{ background: RANK_COLORS[i] }}
               />
-              <span className="line-clamp-2 break-words text-xs font-extrabold leading-tight text-black sm:text-sm">
+              <span className="line-clamp-3 break-words text-[11px] font-extrabold leading-tight text-black sm:line-clamp-2 sm:text-sm">
                 {r.title}
               </span>
-              <span className="flex items-center gap-2">
-                <span className="text-sm font-black text-black">{pct(r)}%</span>
+              <span className="flex items-center gap-1 sm:gap-2">
+                <span className="text-xs font-black text-black sm:text-sm">{pct(r)}%</span>
                 {selected === r.title && (
-                  <span className="text-[10px] font-bold text-[#2f9e62] sm:text-xs">Selected ✓</span>
+                  <span className="text-[11px] font-bold text-[#2f9e62] sm:text-xs">
+                    <span className="hidden sm:inline">Selected </span>✓
+                  </span>
                 )}
               </span>
             </button>
@@ -209,20 +213,26 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) =>
 
       <section
         role="tabpanel"
-        className={`relative flex min-w-0 flex-1 flex-col rounded-bl-3xl rounded-br-3xl border-2 border-[#0b0b2b] bg-white p-5 shadow-sm sm:p-6 ${
+        className={`relative flex min-w-0 flex-1 flex-col rounded-bl-3xl rounded-br-3xl border-2 border-[#0b0b2b] bg-white p-4 shadow-sm sm:p-6 ${
           focus === 0 ? 'rounded-tl-none' : 'rounded-tl-3xl'
         } ${focus === recs.length - 1 ? 'rounded-tr-none' : 'rounded-tr-3xl'}`}
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <RankBadge index={focus} />
-            <h3 className="break-words text-xl font-extrabold leading-tight text-black sm:text-2xl">
+          <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
+            <div className="shrink-0">
+              <RankBadge index={focus} />
+            </div>
+            <div
+              role="heading"
+              aria-level={3}
+              className="min-w-0 flex-1 break-words text-base font-extrabold leading-snug text-black [overflow-wrap:anywhere] sm:text-xl sm:leading-tight lg:text-2xl"
+            >
               {c.title}
-            </h3>
+            </div>
           </div>
-          <span className="shrink-0 text-2xl font-black leading-none text-black sm:text-3xl">
+          <div className="shrink-0 text-lg font-black leading-none text-black sm:text-2xl lg:text-3xl">
             {pct(c)}%
-          </span>
+          </div>
         </div>
 
         <div className="mt-4">

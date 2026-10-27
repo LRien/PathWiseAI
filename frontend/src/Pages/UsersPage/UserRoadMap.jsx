@@ -335,7 +335,7 @@ const rainDown = (root, count = 100) => {
 /*   ex, ey = island thickness (0 = flat)                               */
 /*   OX, OY = room for the sky (clouds, sun, plane) above the island    */
 /* ------------------------------------------------------------------ */
-const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110 }
+const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110, GAP: 150 }
 
 const ISO = {
   port: { k: 0, c: 1, OX: 22, OY: 100, ex: 0, ey: 0, padR: 26, padB: 40 },
@@ -404,12 +404,12 @@ const buildMap = (counts, mode) => {
     let y = P.FIRST
     nodes = counts.map((k, i) => {
       const nd = { x: i % 2 === 0 ? P.LEFT : P.RIGHT, y }
-      y += k ? P.SIDE0 + (k - 1) * P.SIDE + 105 : P.ROW // leave room for the side path
+      y += k ? P.SIDE0 + (k - 1) * P.SIDE + P.GAP : P.ROW // leave room for the side path AND its label before the next stop
       return nd
     })
     const lastK = counts[n - 1]
     start = { x: P.W / 2, y: P.TOP }
-    end = { x: P.W / 2, y: nodes[n - 1].y + (lastK ? P.SIDE0 + (lastK - 1) * P.SIDE + 110 : 125) }
+    end = { x: P.W / 2, y: nodes[n - 1].y + (lastK ? P.SIDE0 + (lastK - 1) * P.SIDE + P.GAP + 5 : 125) }
     LW = P.W
     LH = end.y + 115
     sideAt = (nd, j, m) => ({ x: m % 2 === 0 ? 70 : 330, y: nd.y + P.SIDE0 + j * P.SIDE })
@@ -780,11 +780,13 @@ const makeDecor = (geo, counts) => {
       [336, 44, 'building'],
     ].forEach(([x, y, t], k) => add(t, x, y, { h: 70 + k * 8, tone: k }))
     lnodes.slice(0, -1).forEach((nd, i) => {
+      // gaps that hold a side path (and its label) stay free of scenery so nothing overlaps the text
+      if (counts[i]) return
       const nx = lnodes[i + 1]
       const y = (nd.y + nx.y) / 2
       const left = i % 2 === 0
       add(DECO_CYCLE[(i * 2) % 6], left ? 350 : 50, y, { h: 62, tone: i })
-      if (!counts[i]) add(DECO_CYCLE[(i * 2 + 1) % 6], left ? 50 : 350, y, { h: 58, tone: i + 1 })
+      add(DECO_CYCLE[(i * 2 + 1) % 6], left ? 50 : 350, y, { h: 58, tone: i + 1 })
     })
     add('building', 318, lend.y - 14, { h: 108, tone: 2 }) // the goal tower
     add('lake', 92, lend.y + 56)
@@ -1087,8 +1089,9 @@ const useCheerLine = ({ theme, progress, allDone, nextTitle, celebrate, hasSide 
   return msg
 }
 
-/* the cheering character rides above the focus card on every screen size (desktop too),
-   so it stays with you while you scroll. The bubble appears with each new line and hides after 5 seconds. */
+/* the cheering character rides above the focus card on every screen size (desktop too).
+   On phones it is smaller and sits in its own reserved gap (see the aside padding), so it never covers the map.
+   The bubble appears with each new line and hides after 5 seconds. */
 const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSide, big }) => {
   const msg = useCheerLine({ theme, progress, allDone, nextTitle, celebrate, hasSide })
   const [show, setShow] = useState(true)
@@ -1100,7 +1103,7 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSi
   }, [msg])
 
   return (
-    <div className="pointer-events-none absolute bottom-full right-1 z-30 mb-2 flex items-end gap-1 lg:right-4">
+    <div className="pointer-events-none absolute bottom-full right-1 z-30 mb-1 flex items-end gap-1 lg:right-4 lg:mb-2">
       <style>{`
         @keyframes miniBubbleIn { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { .mini-bubble { animation: none !important; } }
@@ -1110,7 +1113,7 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSi
         <div
           key={msg}
           className={`mini-bubble relative rounded-2xl border-2 border-[#0b0b2b] bg-white px-3 py-2 font-bold leading-snug text-black shadow-md ${
-            big ? 'mb-9 max-w-[280px] text-sm' : 'mb-6 max-w-[190px] text-xs'
+            big ? 'mb-9 max-w-[280px] text-sm' : 'mb-4 max-w-[min(210px,56vw)] text-[11px]'
           }`}
           style={{ animation: 'miniBubbleIn .3s ease-out' }}
           role="status"
@@ -1124,7 +1127,7 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSi
       )}
 
       <div className="rounded-full shadow-lg" style={{ backgroundColor: theme.tint }}>
-        <MbtiCharacter code={code} cheer celebrate={celebrate} className={big ? 'w-[112px]' : 'w-[84px]'} />
+        <MbtiCharacter code={code} cheer celebrate={celebrate} className={big ? 'w-[112px]' : 'w-[68px]'} />
       </div>
     </div>
   )
@@ -2148,7 +2151,7 @@ const UserRoadMap = () => {
                   <div
                     aria-hidden="true"
                     onClick={() => setFocusIdx(i)}
-                    className={`pop-label w-[min(190px,38cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
+                    className={`pop-label w-[min(190px,34cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
                       onLeft ? 'text-left' : 'text-right'
                     }`}
                     style={HIDDEN}
@@ -2254,7 +2257,7 @@ const UserRoadMap = () => {
                     <div
                       aria-hidden="true"
                       onClick={() => setFocusIdx(i)}
-                      className="pop-label w-[min(112px,28cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
+                      className="pop-label w-[min(112px,26cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
                       style={HIDDEN}
                     >
                       {labelBody}
@@ -2281,7 +2284,7 @@ const UserRoadMap = () => {
           </div>
 
           <div className="absolute left-0 top-9 flex h-0 w-0 justify-center">
-            <div className="pop-label w-[200px] shrink-0 rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center" style={HIDDEN}>
+            <div className="pop-label w-[min(200px,50cqw)] shrink-0 rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center" style={HIDDEN}>
               <div className="text-[11px] font-bold uppercase tracking-wide text-neutral-500">Goal</div>
               <div className="text-sm font-extrabold leading-tight text-black">{career.title}</div>
             </div>
@@ -2298,7 +2301,7 @@ const UserRoadMap = () => {
         aria-hidden="true"
       >
         <div className="absolute bottom-[26px] left-0 w-0">
-          <div ref={bobRef} className={land ? '-ml-[44px] w-[88px]' : '-ml-[38px] w-[76px] sm:-ml-[44px] sm:w-[88px]'}>
+          <div ref={bobRef} className={land ? '-ml-[44px] w-[88px]' : '-ml-[34px] w-[68px] sm:-ml-[44px] sm:w-[88px]'}>
             {theme ? (
               <MbtiCharacter code={pred.mbti} className="w-full drop-shadow-lg" />
             ) : (
@@ -2418,7 +2421,8 @@ const UserRoadMap = () => {
           {/* Map + focus card.
               Mobile: portrait island, the focus card floats at the bottom of the screen while the map scrolls.
               Desktop: landscape island (scrolls sideways when long), focus card underneath.
-              The cheering character rides above the focus card on both. */}
+              The cheering character rides above the focus card on both. On phones the aside has top padding
+              so the character sits in its own gap instead of covering the map. */}
           <div className="space-y-4">
             {land ? (
               <div ref={stripRef} className="overflow-x-auto overflow-y-hidden rounded-3xl border-2 border-[#0b0b2b] shadow-sm">
@@ -2429,123 +2433,125 @@ const UserRoadMap = () => {
             )}
 
             {/* FOCUS CARD + CHEER CHARACTER */}
-            <aside className="sticky bottom-3 z-30 min-w-0">
-              {/* mounted only once the loader is gone, so its greeting bubble and timers start when the person can actually see them */}
-              {theme && !showLoader && (
-                <MiniCheer
-                  code={pred.mbti}
-                  theme={theme}
-                  progress={progress}
-                  allDone={allDone}
-                  celebrate={celebrate}
-                  nextTitle={nextTitle}
-                  hasSide={activeIsSide}
-                  big={isDesktop}
-                />
-              )}
+            <aside className="pointer-events-none sticky bottom-3 z-30 min-w-0 pt-24 lg:pt-0">
+              <div className="pointer-events-auto relative">
+                {/* mounted only once the loader is gone, so its greeting bubble and timers start when the person can actually see them */}
+                {theme && !showLoader && (
+                  <MiniCheer
+                    code={pred.mbti}
+                    theme={theme}
+                    progress={progress}
+                    allDone={allDone}
+                    celebrate={celebrate}
+                    nextTitle={nextTitle}
+                    hasSide={activeIsSide}
+                    big={isDesktop}
+                  />
+                )}
 
-              <div
-                className="max-h-[50vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:p-5 lg:grid lg:max-h-none lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
-                style={{ borderColor: activeIsSide ? SIDE : '#0b0b2b' }}
-                aria-live="polite"
-              >
-                <div className="min-w-0">
-                  {theme && (
-                    <div className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: theme.dark }}>
-                      {String(pred.mbti).toUpperCase()} · {theme.name}
+                <div
+                  className="max-h-[46vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:max-h-[50vh] sm:p-5 lg:grid lg:max-h-none lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
+                  style={{ borderColor: activeIsSide ? SIDE : '#0b0b2b' }}
+                  aria-live="polite"
+                >
+                  <div className="min-w-0">
+                    {theme && (
+                      <div className="mb-2 text-xs font-bold uppercase tracking-wide" style={{ color: theme.dark }}>
+                        {String(pred.mbti).toUpperCase()} · {theme.name}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {activeIsSide ? (
+                        <span className="rounded-full px-3 py-1 text-xs font-extrabold text-white" style={{ backgroundColor: SIDE }}>
+                          Optional Side Quest
+                        </span>
+                      ) : (
+                        <span className="text-sm font-bold text-neutral-500">
+                          Step {(activeWhere?.m ?? 0) + 1} of {mainSteps.length}
+                        </span>
+                      )}
+                      {activeDone ? (
+                        <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-extrabold text-[#2f9e62]">Done</span>
+                      ) : active === nextIdx ? (
+                        <span className="rounded-full bg-[#2f80e0] px-3 py-1 text-xs font-extrabold text-white">Next Up</span>
+                      ) : null}
+                      {sub(activeStep) && (
+                        <span className="rounded-full bg-[#f3e6d3] px-3 py-1 text-xs font-bold text-neutral-700">{sub(activeStep)}</span>
+                      )}
+                      {plan.all[active]?.phase && (
+                        <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
+                      )}
+                      {plan.alongside[active] && (
+                        <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
+                          Alongside Step {plan.alongside[active]}
+                        </span>
+                      )}
                     </div>
-                  )}
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {activeIsSide ? (
-                      <span className="rounded-full px-3 py-1 text-xs font-extrabold text-white" style={{ backgroundColor: SIDE }}>
-                        Optional Side Quest
-                      </span>
-                    ) : (
-                      <span className="text-sm font-bold text-neutral-500">
-                        Step {(activeWhere?.m ?? 0) + 1} of {mainSteps.length}
-                      </span>
-                    )}
-                    {activeDone ? (
-                      <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-extrabold text-[#2f9e62]">Done</span>
-                    ) : active === nextIdx ? (
-                      <span className="rounded-full bg-[#2f80e0] px-3 py-1 text-xs font-extrabold text-white">Next Up</span>
-                    ) : null}
-                    {sub(activeStep) && (
-                      <span className="rounded-full bg-[#f3e6d3] px-3 py-1 text-xs font-bold text-neutral-700">{sub(activeStep)}</span>
-                    )}
-                    {plan.all[active]?.phase && (
-                      <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
-                    )}
-                    {plan.alongside[active] && (
-                      <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
-                        Alongside Step {plan.alongside[active]}
-                      </span>
-                    )}
-                  </div>
-
-                  <div
-                    className={`mt-2 break-words text-lg font-extrabold leading-snug sm:text-xl ${
-                      activeDone ? 'text-neutral-400 line-through' : 'text-black'
-                    }`}
-                  >
-                    {title(activeStep)}
-                  </div>
-
-                  {detail(activeStep) && (
-                    <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
-                  )}
-
-                  {activeIsSide && (
-                    <div className="mt-2 text-sm font-bold" style={{ color: SIDE }}>
-                      Extra credit. It won’t count toward your progress.
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-3 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
-                  <details className="group">
-                    <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-bold text-neutral-500 [&::-webkit-details-marker]:hidden">
-                      Find Courses For This Step
-                      <Chevron className="!h-4 !w-4" />
-                    </summary>
-                    <div className="mt-2">
-                      <CourseLinks topic={title(activeStep)} />
-                    </div>
-                  </details>
-
-                  <div className="mt-4 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={finishActive}
-                      className={`h-10 rounded-full px-5 text-xs font-extrabold uppercase tracking-wide transition ${
-                        activeDone
-                          ? 'border border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
-                          : 'bg-[#0b0b2b] text-white hover:bg-[#1a1a4a]'
+                    <div
+                      className={`mt-2 break-words text-lg font-extrabold leading-snug sm:text-xl ${
+                        activeDone ? 'text-neutral-400 line-through' : 'text-black'
                       }`}
                     >
-                      {activeDone ? 'Mark as not done' : 'Mark as done'}
-                    </button>
+                      {title(activeStep)}
+                    </div>
 
-                    <div className="ml-auto flex shrink-0 gap-2">
+                    {detail(activeStep) && (
+                      <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
+                    )}
+
+                    {activeIsSide && (
+                      <div className="mt-2 text-sm font-bold" style={{ color: SIDE }}>
+                        Extra credit. It won’t count toward your progress.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-bold text-neutral-500 [&::-webkit-details-marker]:hidden">
+                        Find Courses For This Step
+                        <Chevron className="!h-4 !w-4" />
+                      </summary>
+                      <div className="mt-2">
+                        <CourseLinks topic={title(activeStep)} />
+                      </div>
+                    </details>
+
+                    <div className="mt-4 flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => goTo(active - 1)}
-                        disabled={active === 0}
-                        aria-label="Previous step"
-                        className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                        onClick={finishActive}
+                        className={`h-10 rounded-full px-5 text-xs font-extrabold uppercase tracking-wide transition ${
+                          activeDone
+                            ? 'border border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
+                            : 'bg-[#0b0b2b] text-white hover:bg-[#1a1a4a]'
+                        }`}
                       >
-                        ←
+                        {activeDone ? 'Mark as not done' : 'Mark as done'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => goTo(active + 1)}
-                        disabled={active === total - 1}
-                        aria-label="Next step"
-                        className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
-                      >
-                        →
-                      </button>
+
+                      <div className="ml-auto flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => goTo(active - 1)}
+                          disabled={active === 0}
+                          aria-label="Previous step"
+                          className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goTo(active + 1)}
+                          disabled={active === total - 1}
+                          aria-label="Next step"
+                          className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                        >
+                          →
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
