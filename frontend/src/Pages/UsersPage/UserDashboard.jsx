@@ -36,14 +36,6 @@ const pct = (career) => {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
-const fmtDate = (date) => {
-  if (!date) return ''
-  const parsed = new Date(date)
-  return Number.isNaN(parsed.getTime())
-    ? ''
-    : parsed.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
 const reducedMotion = () =>
   typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
@@ -120,9 +112,9 @@ const Label = ({ children, className = 'text-neutral-500' }) => (
 )
 
 const SKILL_TABS = [
+  ['soft', 'Soft'],
   ['technical', 'Technical'],
   ['other', 'Other'],
-  ['soft', 'Soft'],
 ]
 
 const Chips = ({ items, className = '' }) => (
@@ -130,7 +122,7 @@ const Chips = ({ items, className = '' }) => (
     {items.map((item, index) => (
       <li
         key={`${text(item)}-${index}`}
-        className={`max-w-full break-words rounded-full border bg-white px-3 py-1 text-xs leading-4 text-neutral-700 ${className}`}
+        className={`max-w-full cursor-default select-text break-words rounded-md bg-white px-3 py-1.5 text-xs font-semibold leading-4 text-neutral-800 ${className}`}
       >
         {text(item)}
       </li>
@@ -144,7 +136,7 @@ const UserDashboard = () => {
   const [road, setRoad] = useState(null)
   const [done, setDone] = useState([])
   const [focus, setFocus] = useState(0)
-  const [skillTab, setSkillTab] = useState('technical')
+  const [skillTab, setSkillTab] = useState('soft')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -279,13 +271,6 @@ const UserDashboard = () => {
 
   const avoid = list(pred?.avoid ?? pred?.careersToAvoid ?? pred?.avoidCareers).slice(0, 3)
 
-  const predictionNumber =
-    pred?.predictionNumber ?? pred?.prediction_number ?? pred?.number ?? ''
-
-  const predictionDate = fmtDate(
-    pred?.createdAt ?? pred?.created_at ?? pred?.predictionDate ?? pred?.prediction_date
-  )
-
   /* entrance: each block stays invisible while the loader is up, then rises in one after another.
      n is the order (0 = first). */
   const rise = (n = 0) =>
@@ -311,16 +296,11 @@ const UserDashboard = () => {
 
       <div className="mx-auto w-full max-w-[1120px] space-y-6">
         {/* Page heading */}
-        <header className="dash-rise flex flex-wrap items-start justify-between gap-4" style={rise(0)}>
+        <header className="dash-rise flex flex-wrap items-center justify-between gap-4" style={rise(0)}>
           <div className="min-w-0">
             <h1 className="text-3xl font-black tracking-tight text-black sm:text-4xl">
-              Your top 3 careers
+              Your Top 3 Careers
             </h1>
-
-            <p className="mt-1 text-sm leading-relaxed text-neutral-600">
-              {predictionNumber ? `Prediction #${predictionNumber}` : 'Your latest prediction'}
-              {predictionDate ? ` made on ${predictionDate}` : ''}. Pick one to see its roadmap.
-            </p>
           </div>
 
           <Link
@@ -614,7 +594,7 @@ const UserDashboard = () => {
                       </div>
 
                       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4">
-                        <div className="min-w-0 text-sm text-neutral-500">Selecting saves this career and unlocks its roadmap.</div>
+                        <div className="min-w-0 text-sm text-neutral-500">Selecting Saves This Career And Unlocks Its Roadmap</div>
                         <button
                           type="button"
                           onClick={() => chooseCareer(currentCareer)}
@@ -650,9 +630,9 @@ const UserDashboard = () => {
                 className="dash-rise rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6"
                 style={rise(3)}
               >
-                <h2 className="text-base font-extrabold text-black">Careers to avoid</h2>
+                <h2 className="text-base font-extrabold text-black">Careers To Avoid</h2>
                 <div className="text-sm text-neutral-500">
-                  Fields that may be a weaker fit for this profile
+                  Fields That May Be A Weaker Fit For This Profile
                 </div>
 
                 <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -675,7 +655,7 @@ const UserDashboard = () => {
               className="dash-rise pb-4 text-xs leading-relaxed text-neutral-500"
               style={rise(4)}
             >
-              Suggestions are based on your personality type, skills, and education. Use them as a
+              suggestions are based on your personality type, skills, and education. use them as a
               guide, not a rule.
             </footer>
           </>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { CiMenuKebab } from 'react-icons/ci'
+import { RxHamburgerMenu } from 'react-icons/rx'
 /* This file lives in Pages/UsersPage/UsersComponents, so the api folder is three levels up.
    If your api folder is somewhere else, change this path. */
 import { listPredictions, deletePrediction } from '../../../api/predictions'
@@ -238,7 +238,7 @@ const PredictionCard = ({ pred, isLatest, isNew, onNavigate, onDeleted }) => {
                 )}
               </span>
               {pred.topMatch && (
-                <span className={`mt-0.5 block truncate text-xs font-semibold ${isActive ? 'text-white/85' : 'text-neutral-700'}`}>
+                <span className={`mt-0.5 block break-words text-xs font-semibold leading-snug ${isActive ? 'text-white/85' : 'text-neutral-700'}`}>
                   {pred.topMatch.title}
                 </span>
               )}
@@ -405,7 +405,7 @@ const PredictionList = ({ onNavigate }) => {
 /*
   The whole sidebar is self-contained:
   - closed by default
-  - the triple-dot button (top-left) opens it as an overlay on top of the page
+  - the hamburger button (top-left) opens it as an overlay on top of the page
   - while it is open, the page behind it cannot scroll
   - click the dark backdrop, press Esc, press the hide button, or navigate = it closes
   Just render <UserSideBar /> once in UserLayout, no props needed.
@@ -481,7 +481,7 @@ const UserSideBar = ({ onNavigate }) => {
 
   return (
     <>
-      {/* the triple-dot button: visible while the sidebar is closed */}
+      {/* the hamburger button: visible while the sidebar is closed */}
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -489,11 +489,11 @@ const UserSideBar = ({ onNavigate }) => {
         aria-expanded={open}
         title="Open sidebar"
         tabIndex={open ? -1 : 0}
-        className={`fixed left-5 top-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#0b0b2b] text-white shadow-lg ring-4 ring-white/70 transition duration-300 hover:scale-110 hover:bg-[#1a1a4a] focus-visible:outline-none focus-visible:ring-[#2f80e0] motion-reduce:transition-none ${
+        className={`fixed left-5 top-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full bg-transparent text-[#0b0b2b] transition duration-300 hover:scale-110 hover:text-[#2f80e0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f80e0] motion-reduce:transition-none ${
           open ? 'pointer-events-none scale-50 opacity-0' : 'scale-100 opacity-100'
         }`}
       >
-        <CiMenuKebab className="h-6 w-6" aria-hidden="true" />
+        <RxHamburgerMenu className="h-8 w-8" aria-hidden="true" />
       </button>
 
       {/* overlay: sits on top of the page, so nothing behind it can scroll */}
