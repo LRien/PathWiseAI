@@ -10,9 +10,9 @@ import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoad
 /* ------------------------------------------------------------------ */
 /* UserRoadMap                                                         */
 /*                                                                     */
-/* The map is a bright, parchment-style isometric "island" with a      */
-/* road winding across it, a river with a bridge and a waterfall,      */
-/* buildings, trees, clouds, a compass and a plane.                    */
+/* The map is a bright, parchment-style flat (2D) "island" with a      */
+/* road winding across it, a river with a bridge, buildings, trees,    */
+/* clouds, a compass and a plane.                                      */
 /*                                                                     */
 /*   - mobile / tablet (under 1024px): the road winds DOWN the island   */
 /*   - desktop (1024px and up): the road runs ACROSS the island, which  */
@@ -66,6 +66,9 @@ const detail = (x) => {
   return typeof d === 'string' && d !== text(x) ? d : ''
 }
 
+/* Title Case: capitalise the first letter of every word ("build core skills" -> "Build Core Skills") */
+const tc = (s) => String(s ?? '').replace(/(^|[\s(/\-–])([a-z])/g, (_, a, b) => a + b.toUpperCase())
+
 /* A step is optional when the API says so (optional / isOptional / required:false / type:'optional')
    or when its title is tagged, e.g. "Optional: Learn Docker" or "Learn Docker (optional)". */
 const OPT_TAG = /^\s*optional\b\s*[:\-–]?\s*|\s*[([]\s*optional\s*[)\]]/i
@@ -77,11 +80,11 @@ const isOptional = (x) => {
   }
   return OPT_TAG.test(text(x))
 }
-// title without the "(optional)" tag, since the side path already says it
+// title without the "(optional)" tag (the side path already says it), in Title Case
 const title = (x) => {
   const t = text(x)
   const c = t.replace(OPT_TAG, ' ').trim() || t
-  return c.charAt(0).toUpperCase() + c.slice(1)
+  return tc(c)
 }
 
 /* ------------------------------------------------------------------ */
@@ -322,21 +325,21 @@ const rainDown = (root, count = 100) => {
 
 /* ------------------------------------------------------------------ */
 /* Map geometry                                                        */
-/* The route is laid out on a flat "logical" plane (x, y), exactly as  */
-/* before. Then every point is run through proj(), which tilts the     */
-/* plane into an isometric-style island (a slab with visible sides).   */
+/* The route is laid out on a flat "logical" plane (x, y). Every point */
+/* is run through proj(), which now maps the plane 1:1 onto the screen */
+/* (flat 2D map: no tilt, no visible island sides).                    */
 /* Paths, stops, the character and the scenery all use the same        */
 /* projection, so they always line up.                                 */
-/*   k  = how far the back of the island leans to the right             */
-/*   c  = how much depth is squashed (smaller = flatter island)         */
-/*   ex, ey = how thick the island looks on its front / right sides     */
+/*   k  = lean (0 = none)                                               */
+/*   c  = depth scale (1 = no squashing)                                */
+/*   ex, ey = island thickness (0 = flat)                               */
 /*   OX, OY = room for the sky (clouds, sun, plane) above the island    */
 /* ------------------------------------------------------------------ */
 const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110 }
 
 const ISO = {
-  port: { k: 0.07, c: 0.92, OX: 22, OY: 100, ex: 14, ey: 30, padR: 26, padB: 40 },
-  land: { k: 0.3, c: 0.6, OX: 34, OY: 96, ex: 8, ey: 40, padR: 30, padB: 40 },
+  port: { k: 0, c: 1, OX: 22, OY: 100, ex: 0, ey: 0, padR: 26, padB: 40 },
+  land: { k: 0, c: 1, OX: 34, OY: 96, ex: 0, ey: 0, padR: 30, padB: 40 }, // try c: 0.8 for a shorter desktop map
 }
 
 const rd = (n) => Math.round(n * 10) / 10
@@ -451,8 +454,7 @@ const buildMap = (counts, mode) => {
     branches[m] = { ...t, nodes: pts.slice(1).map(proj), lnodes: pts.slice(1) }
   })
 
-  /* the river: runs between two stops, crosses the road under a bridge and
-     drops off the edge of the island as a waterfall */
+  /* the river: runs between two stops and crosses the road under a bridge */
   const rm = Math.floor((chain.length - 2) / 2)
   let rpts
   if (mode === 'land') {
@@ -495,19 +497,6 @@ const buildMap = (counts, mode) => {
     .map((s, i) => `${i ? 'L' : 'M'} ${rd(s.x)} ${rd(s.y)}`)
     .join(' ')
 
-  /* waterfall: where the river leaves the island */
-  let fall
-  if (mode === 'land') {
-    const s = river.samples.reduce((a, b) => (Math.abs(b.ly - LH) < Math.abs(a.ly - LH) ? b : a))
-    fall = { E: proj({ x: s.lx, y: LH }), d: { x: 1, y: 0 } }
-  } else {
-    const s = river.samples.reduce((a, b) => (Math.abs(b.lx - LW) < Math.abs(a.lx - LW) ? b : a))
-    const a = proj({ x: LW, y: 0 })
-    const b = proj({ x: LW, y: LH })
-    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1
-    fall = { E: proj({ x: LW, y: s.ly }), d: { x: (b.x - a.x) / L, y: (b.y - a.y) / L } }
-  }
-
   return {
     mode,
     W,
@@ -529,14 +518,12 @@ const buildMap = (counts, mode) => {
     branches,
     river,
     bridge,
-    fall,
     slab: {
       tl: proj({ x: 0, y: 0 }),
       tr: proj({ x: LW, y: 0 }),
       br: proj({ x: LW, y: LH }),
       bl: proj({ x: 0, y: LH }),
     },
-    ext: { x: cfg.ex, y: cfg.ey },
   }
 }
 
@@ -557,7 +544,7 @@ const pctX = (geo, x) => `${(x / geo.W) * 100}%`
 const pctY = (geo, y) => `${(y / geo.H) * 100}%`
 
 /* ------------------------------------------------------------------ */
-/* Scenery                                                             */
+/* Scenery (flat, front-view)                                          */
 /* Every piece has an outer <g> that places it and an inner <g> with    */
 /* class "pop-deco" that anime.js fades / drops in.                     */
 /* ------------------------------------------------------------------ */
@@ -567,42 +554,31 @@ const TONES = [
   { l: '#dcecf9', r: '#b8d1e8', t: '#f0f7fd', w: '#7db6e8', w2: '#9bc9ef' },
 ]
 
-/* an isometric office block: two shaded faces, a roof and rows of windows */
+/* a flat office block: one face, rows of windows and an antenna on tall ones */
 const Building = ({ h, tone }) => {
   const c = TONES[Math.abs(tone) % 3]
   const rows = Math.max(1, Math.floor((h - 16) / 13))
-  const win = []
-  for (let r = 0; r < rows; r++) for (let k = 0; k < 2; k++) win.push([3 + k * 7.5, -h + 7 + r * 13])
   return (
     <>
-      <ellipse cx="0" cy="-8" rx="28" ry="12" fill="#1b3a14" opacity=".12" />
-      <polygon points={`-18,-9 0,0 0,${-h} -18,${-9 - h}`} fill={c.l} />
-      <polygon points={`0,0 18,-9 18,${-9 - h} 0,${-h}`} fill={c.r} />
-      <polygon points={`0,${-h} 18,${-9 - h} 0,${-18 - h} -18,${-9 - h}`} fill={c.t} />
-      <g transform="translate(-18 -9) skewY(26.565)">
-        {win.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width="5" height="7" rx="1" fill={c.w} />
-        ))}
-      </g>
-      <g transform="skewY(-26.565)">
-        {win.map(([x, y], i) => (
-          <rect key={i} x={x} y={y} width="5" height="7" rx="1" fill={c.w2} />
-        ))}
-      </g>
-      {h > 80 && <line x1="0" y1={-9 - h} x2="0" y2={-21 - h} stroke="#8b95a5" strokeWidth="1.6" strokeLinecap="round" />}
+      <ellipse cx="0" cy="-2" rx="22" ry="5" fill="#1b3a14" opacity=".12" />
+      <rect x="-16" y={-h} width="32" height={h} rx="3" fill={c.l} stroke={c.r} strokeWidth="2" />
+      {Array.from({ length: rows }).flatMap((_, r) =>
+        [0, 1].map((k) => (
+          <rect key={`${r}-${k}`} x={-10 + k * 12} y={-h + 8 + r * 13} width="8" height="7" rx="1.5" fill={c.w} />
+        ))
+      )}
+      {h > 80 && <line x1="0" y1={-h} x2="0" y2={-h - 12} stroke="#8b95a5" strokeWidth="1.6" strokeLinecap="round" />}
     </>
   )
 }
 
 const IsoHouse = () => (
   <>
-    <ellipse cx="0" cy="-7" rx="25" ry="10" fill="#1b3a14" opacity=".12" />
-    <polygon points="-16,-8 0,0 0,-16 -16,-24" fill="#fbefdc" />
-    <polygon points="0,0 16,-8 16,-24 0,-16" fill="#e6d3b6" />
-    <polygon points="-20,-26 0,-14 0,-38" fill="#ee6b5e" />
-    <polygon points="0,-14 20,-26 0,-38" fill="#cc4a40" />
-    <polygon points="-5,-2 -5,-11 -1,-9 -1,0" fill="#9c7a52" />
-    <rect x="5" y="-18" width="5" height="6" fill="#b3dcf4" transform="skewY(-26.565) translate(0 0)" />
+    <ellipse cx="0" cy="-2" rx="20" ry="5" fill="#1b3a14" opacity=".12" />
+    <rect x="-14" y="-22" width="28" height="22" fill="#fbefdc" stroke="#e6d3b6" strokeWidth="2" />
+    <polygon points="-18,-22 0,-38 18,-22" fill="#ee6b5e" />
+    <rect x="-4" y="-13" width="8" height="13" rx="1" fill="#9c7a52" />
+    <rect x="6" y="-18" width="6" height="6" fill="#b3dcf4" />
   </>
 )
 
@@ -749,43 +725,6 @@ const Plane = ({ y, W, rm }) => (
   </g>
 )
 
-/* the waterfall where the river pours off the edge of the island */
-const Waterfall = ({ fall, e, rm }) => {
-  const { E, d } = fall
-  const L = 1.3
-  const A = { x: E.x - d.x * 11, y: E.y - d.y * 11 }
-  const B = { x: E.x + d.x * 11, y: E.y + d.y * 11 }
-  const tip = { x: E.x + e.x * L, y: E.y + e.y * L }
-  const poly = [A, B, { x: B.x + e.x * L, y: B.y + e.y * L }, { x: A.x + e.x * L, y: A.y + e.y * L }]
-    .map((p) => `${rd(p.x)},${rd(p.y)}`)
-    .join(' ')
-  return (
-    <g>
-      <polygon points={poly} fill="url(#rm-water)" />
-      {[-6, 0, 6].map((o) => (
-        <line
-          key={o}
-          x1={E.x + d.x * o}
-          y1={E.y + d.y * o}
-          x2={E.x + d.x * o + e.x * L}
-          y2={E.y + d.y * o + e.y * L}
-          stroke="#fff"
-          strokeOpacity=".8"
-          strokeWidth="2.4"
-          strokeDasharray="7 7"
-          strokeLinecap="round"
-        >
-          {!rm && <animate attributeName="stroke-dashoffset" from="0" to="-14" dur={`${0.7 + Math.abs(o) * 0.02}s`} repeatCount="indefinite" />}
-        </line>
-      ))}
-      <ellipse cx={tip.x} cy={tip.y} rx="22" ry="7" fill="#fff" fillOpacity=".6">
-        {!rm && <animate attributeName="ry" values="6;10;6" dur="1.4s" repeatCount="indefinite" />}
-        {!rm && <animate attributeName="fill-opacity" values=".4;.75;.4" dur="1.4s" repeatCount="indefinite" />}
-      </ellipse>
-    </g>
-  )
-}
-
 const DECO_CYCLE = ['tree', 'building', 'pine', 'bush', 'house', 'flowers']
 
 /* scatters trees, buildings and so on over the island, keeping them off the road, the side paths and the river.
@@ -803,7 +742,7 @@ const makeDecor = (geo, counts) => {
     !near(x, y, geo.samples, 40, 2) &&
     Object.values(geo.branches).every((b) => !near(x, y, b.samples, 34, 2))
 
-  /* how far down the road is at a given x (the road now zig-zags, so "in front of the road" depends on x) */
+  /* how far down the road is at a given x (the road zig-zags, so "in front of the road" depends on x) */
   const roadYAt = (x) => {
     let best = geo.samples[0]
     for (const s of geo.samples) if (Math.abs(s.lx - x) < Math.abs(best.lx - x)) best = s
@@ -857,14 +796,11 @@ const makeDecor = (geo, counts) => {
   return { back, front }
 }
 
-/* sky, the island itself, the river and the scenery behind the road */
+/* sky, the flat island, the river and the scenery behind the road */
 const Backdrop = ({ geo, decor, rm }) => {
-  const { W, H, LW, LH, proj, slab: s, ext: e, fall, river, mode } = geo
+  const { W, H, LW, LH, proj, slab: s, river, mode } = geo
   const pt = (p) => `${rd(p.x)},${rd(p.y)}`
-  const plus = (p) => ({ x: p.x + e.x, y: p.y + e.y })
   const top = [s.tl, s.tr, s.br, s.bl].map(pt).join(' ')
-  const front = [s.bl, s.br, plus(s.br), plus(s.bl)].map(pt).join(' ')
-  const right = [s.tr, s.br, plus(s.br), plus(s.tr)].map(pt).join(' ')
   const lip = `M ${pt(s.bl).replace(',', ' ')} L ${pt(s.br).replace(',', ' ')} L ${pt(s.tr).replace(',', ' ')}`
   const f1 = proj({ x: 14, y: 12 })
   const f2 = proj({ x: LW - 14, y: 12 })
@@ -876,7 +812,6 @@ const Backdrop = ({ geo, decor, rm }) => {
     [0.86, 0.74, 100],
     [0.56, 0.46, 70],
   ]
-  const strata = [0.4, 0.72]
 
   return (
     <>
@@ -889,18 +824,6 @@ const Backdrop = ({ geo, decor, rm }) => {
         <linearGradient id="rm-top" x1="0" y1="0" x2="0.2" y2="1">
           <stop offset="0" stopColor="#d3f2ae" />
           <stop offset="1" stopColor="#a9de83" />
-        </linearGradient>
-        <linearGradient id="rm-front" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#e9cca4" />
-          <stop offset="1" stopColor="#c99d70" />
-        </linearGradient>
-        <linearGradient id="rm-right" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#d9b88f" />
-          <stop offset="1" stopColor="#b48a5e" />
-        </linearGradient>
-        <linearGradient id="rm-water" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#cdeafa" />
-          <stop offset="1" stopColor="#94cdee" />
         </linearGradient>
         <clipPath id="rm-top-clip">
           <polygon points={top} />
@@ -931,29 +854,15 @@ const Backdrop = ({ geo, decor, rm }) => {
       )}
       <Plane y={58} W={W} rm={rm} />
 
-      {/* the island */}
+      {/* the island (flat) */}
       <g className="slab" style={HIDDEN}>
-        <polygon points={right} fill="url(#rm-right)" />
-        <polygon points={front} fill="url(#rm-front)" />
-        {strata.map((t) => (
-          <line
-            key={t}
-            x1={s.bl.x + e.x * t}
-            y1={s.bl.y + e.y * t}
-            x2={s.br.x + e.x * t}
-            y2={s.br.y + e.y * t}
-            stroke="#8a5a35"
-            strokeOpacity=".25"
-            strokeWidth="2"
-          />
-        ))}
         <polygon points={top} fill="url(#rm-top)" />
 
         {/* lighter patches of grass */}
         <g clipPath="url(#rm-top-clip)">
           {patches.map(([fx, fy, r], k) => {
             const q = proj({ x: LW * fx, y: LH * fy })
-            return <ellipse key={k} cx={q.x} cy={q.y} rx={r} ry={r * 0.28} fill="#e6fbc9" opacity=".5" />
+            return <ellipse key={k} cx={q.x} cy={q.y} rx={r} ry={r * 0.4} fill="#e6fbc9" opacity=".5" />
           })}
 
           {/* the river */}
@@ -969,8 +878,6 @@ const Backdrop = ({ geo, decor, rm }) => {
         <path d={lip} fill="none" stroke="#8fcf66" strokeWidth="6" strokeLinejoin="round" strokeLinecap="round" />
         <path d={fence} fill="none" stroke="#fff" strokeWidth="9" strokeDasharray="2.5 11" />
         <path d={fence} fill="none" stroke="#fff" strokeWidth="2" transform="translate(0 -2)" />
-
-        <Waterfall fall={fall} e={e} rm={rm} />
       </g>
 
       {/* scenery behind the road */}
@@ -986,44 +893,46 @@ const Backdrop = ({ geo, decor, rm }) => {
 /* ------------------------------------------------------------------ */
 
 /* online course search links, they open each platform's search page so they never go stale.
+   Each one has a brand icon (react-icons) in the platform's own colour.
    Check the URL formats now and then in case a platform changes them. */
 const COURSE_SOURCES = [
-  { name: 'Udemy', Icon: SiUdemy, bg: '#a435f0', url: (q) => `https://www.udemy.com/courses/search/?q=${encodeURIComponent(q)}` },
-  { name: 'Coursera', Icon: SiCoursera, bg: '#0056d2', url: (q) => `https://www.coursera.org/search?query=${encodeURIComponent(q)}` },
-  { name: 'YouTube', Icon: FaYoutube, bg: '#ff0000', url: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} course`)}` },
+  {
+    name: 'Udemy',
+    Icon: SiUdemy,
+    color: '#A435F0',
+    url: (q) => `https://www.udemy.com/courses/search/?q=${encodeURIComponent(q)}`,
+  },
+  {
+    name: 'Coursera',
+    Icon: SiCoursera,
+    color: '#0056D2',
+    url: (q) => `https://www.coursera.org/search?query=${encodeURIComponent(q)}`,
+  },
+  {
+    name: 'YouTube',
+    Icon: FaYoutube,
+    color: '#FF0000',
+    url: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} course`)}`,
+  },
 ]
 
-/* each platform is a small card with a branded thumbnail tile.
-   fill = three equal compact cards that span the full width (used inside tiles, so there is no leftover space) */
-const CourseLinks = ({ topic, fill = false }) => (
-  <div className={fill ? 'grid grid-cols-3 gap-2' : 'flex flex-wrap gap-2'}>
-    {COURSE_SOURCES.map((s) => {
-      const Icon = s.Icon
-      return (
-        <a
-          key={s.name}
-          href={s.url(topic)}
-          target="_blank"
-          rel="noreferrer"
-          aria-label={`Search ${s.name} for ${topic} courses (opens in a new tab)`}
-          className={`flex min-w-0 items-center gap-2 rounded-xl border border-[#e0d1ba] bg-white p-1.5 transition hover:border-[#0b0b2b] hover:bg-[#f7efe2] ${
-            fill ? 'pr-2' : 'pr-3'
-          }`}
-        >
-          <span
-            className={`flex shrink-0 items-center justify-center rounded-lg text-white shadow-sm ${fill ? 'h-8 w-8' : 'h-9 w-9'}`}
-            style={{ backgroundColor: s.bg }}
-            aria-hidden="true"
-          >
-            <Icon className="h-4 w-4" />
-          </span>
-          <span className="min-w-0 leading-tight">
-            <span className="block truncate text-[13px] font-extrabold text-[#0b0b2b]">{s.name} ↗</span>
-            {!fill && <span className="block text-[11px] text-neutral-500">Search courses</span>}
-          </span>
-        </a>
-      )
-    })}
+/* quiet text links (not buttons): small grey text with a dotted underline, plus a small brand icon in front */
+const CourseLinks = ({ topic }) => (
+  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-neutral-500">
+    <span>Courses:</span>
+    {COURSE_SOURCES.map(({ name, Icon, color, url }) => (
+      <a
+        key={name}
+        href={url(topic)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Search ${name} for ${topic} courses (opens in a new tab)`}
+        className="group/course inline-flex items-center gap-1.5 transition hover:text-[#0b0b2b]"
+      >
+        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} aria-hidden="true" />
+        <span className="underline decoration-dotted underline-offset-2">{name}</span>
+      </a>
+    ))}
   </div>
 )
 
@@ -1048,13 +957,20 @@ const uniq = (arr) => {
   })
 }
 
-const Chips = ({ items, cls = 'border-[#e0d1ba]' }) => {
+const Chips = ({ items, stack = false, rows = 0 }) => {
   const shown = items.map(chipText).filter(Boolean)
   if (!shown.length) return null
   return (
-    <ul className="mt-2 flex flex-wrap gap-2">
+    <ul
+      className={
+        rows
+          ? 'mt-2 grid grid-flow-col auto-cols-max justify-start gap-x-4 gap-y-2'
+          : `mt-2 flex gap-2 ${stack ? 'flex-col items-start' : 'flex-wrap'}`
+      }
+      style={rows ? { gridTemplateRows: `repeat(${rows}, auto)` } : undefined}
+    >
       {shown.map((t, i) => (
-        <li key={`${t}-${i}`} className={`rounded-full border bg-white px-3 py-1 text-[13px] text-neutral-700 ${cls}`}>
+        <li key={`${t}-${i}`} className="rounded-xl bg-white px-4 py-1.5 text-[13px] font-bold text-black">
           {t}
         </li>
       ))}
@@ -1076,11 +992,11 @@ const Chevron = ({ className = '' }) => (
   </svg>
 )
 
-/* one skill tile: the name, with the course links always visible right below it */
+/* one skill tile: the name, with quiet course links right below it */
 const SkillRow = ({ skill }) => (
   <div className="min-w-0 rounded-2xl bg-white/70 p-3">
-    <div className="mb-2 break-words text-sm font-extrabold leading-tight text-black">{skill}</div>
-    <CourseLinks topic={skill} fill />
+    <div className="mb-1.5 break-words text-sm font-extrabold leading-tight text-black">{skill}</div>
+    <CourseLinks topic={skill} />
   </div>
 )
 
@@ -1939,7 +1855,15 @@ const UserRoadMap = () => {
     }
   }
 
+  /* header total: "4-5 years (starting from zero)" -> "4–5 Years" (the header adds "About" and "From Scratch") */
   const estimatedTotal = text(roadmap.timeline?.estimatedTotal)
+  const totalLabel = tc(
+    estimatedTotal
+      .replace(/^about\s+/i, '')
+      .replace(/\s*\(.*?\)\s*/g, ' ')
+      .trim()
+      .replace(/(\d)\s*-\s*(\d)/g, '$1–$2')
+  )
   const canPreview = !reducedMotion()
   const nextTitle = nextIdx >= 0 ? title(steps[nextIdx]) : ''
   const land = geoMode === 'land'
@@ -1961,7 +1885,7 @@ const UserRoadMap = () => {
         role="img"
         aria-label={`Map of your ${mainSteps.length} main steps${sideTotal ? ` and ${sideTotal} optional side steps` : ''} toward becoming ${career.title}`}
       >
-        {/* sky, island, river, waterfall and the scenery behind the road */}
+        {/* sky, island, river and the scenery behind the road */}
         <Backdrop geo={geo} decor={decor} rm={!canPreview} />
 
         {/* the road: a soft shadow, the kerb, then the asphalt (these two build themselves in) */}
@@ -2073,23 +1997,23 @@ const UserRoadMap = () => {
 
         {/* round pads under the start, every stop and the goal */}
         <g className="pop-deco" style={HIDDEN}>
-          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="40" ry="20" fill="#e3e7f0" stroke="#bcc3d4" strokeWidth="2.5" />
-          <ellipse cx={geo.start.x} cy={geo.start.y + 2} rx="30" ry="15" fill="#f3f5fa" />
+          <circle cx={geo.start.x} cy={geo.start.y} r="30" fill="#e3e7f0" stroke="#bcc3d4" strokeWidth="2.5" />
+          <circle cx={geo.start.x} cy={geo.start.y} r="22" fill="#f3f5fa" />
         </g>
         {geo.nodes.map((nd, k) => (
           <g key={`pad-${k}`} className="pop-deco" style={HIDDEN}>
-            <ellipse cx={nd.x} cy={nd.y + 2} rx="30" ry="15" fill="#f7f8fc" stroke="#c3c8d6" strokeWidth="2" />
+            <circle cx={nd.x} cy={nd.y} r="26" fill="#f7f8fc" stroke="#c3c8d6" strokeWidth="2" />
           </g>
         ))}
         {Object.values(geo.branches).flatMap((br, k) =>
           br.nodes.map((nd, j) => (
             <g key={`sidepad-${k}-${j}`} className="pop-deco" style={HIDDEN}>
-              <ellipse cx={nd.x} cy={nd.y + 2} rx="24" ry="12" fill="#f8f4ff" stroke={SIDE} strokeWidth="2" strokeDasharray="4 3" />
+              <circle cx={nd.x} cy={nd.y} r="22" fill="#f8f4ff" stroke={SIDE} strokeWidth="2" strokeDasharray="4 3" />
             </g>
           ))
         )}
         <g className="pop-deco" style={HIDDEN}>
-          <ellipse cx={geo.end.x} cy={geo.end.y + 2} rx="40" ry="20" fill="#eef0f5" stroke="#bcc3d4" strokeWidth="2.5" />
+          <circle cx={geo.end.x} cy={geo.end.y} r="32" fill="#eef0f5" stroke="#bcc3d4" strokeWidth="2.5" />
         </g>
 
         {/* preview trail: drawn once while the character walks the route, then fades out */}
@@ -2237,7 +2161,7 @@ const UserRoadMap = () => {
           )
         })}
 
-        {/* optional "Optional" tags where each side path leaves the main route */}
+        {/* "Optional" tags where each side path leaves the main route */}
         {Object.entries(geo.branches).map(([m, br]) => {
           const parent = geo.nodes[m]
           const first = br.nodes[0]
@@ -2276,7 +2200,7 @@ const UserRoadMap = () => {
                   {title(step)}
                 </div>
                 <div className="mt-0.5 text-[10px] font-bold" style={{ color: SIDE }}>
-                  Side quest{sub(step) ? ` · ${sub(step)}` : ''}
+                  Side Quest{sub(step) ? ` · ${sub(step)}` : ''}
                 </div>
               </>
             )
@@ -2407,9 +2331,9 @@ const UserRoadMap = () => {
           <div className="min-w-0">
             <h1 className="break-words text-3xl font-black tracking-tight text-black sm:text-4xl">Roadmap: {career.title}</h1>
             <div className="mt-1 text-sm text-neutral-600">
-              {mainSteps.length} steps
-              {sideTotal > 0 ? ` + ${sideTotal} optional` : ''}
-              {estimatedTotal ? ` · about ${estimatedTotal.replace(/^about\s+/i, '')}` : ''}
+              {mainSteps.length} Steps
+              {sideTotal > 0 ? ` + ${sideTotal} Optional` : ''}
+              {totalLabel ? ` · About ${totalLabel} From Scratch` : ''}
             </div>
           </div>
           <span className="shrink-0 whitespace-nowrap rounded-full bg-[#0b0b2b] px-4 py-2 text-sm font-extrabold text-white">
@@ -2481,11 +2405,11 @@ const UserRoadMap = () => {
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-[#e6d8c3] pt-3 text-[12px] font-bold text-neutral-600">
                 <span className="flex items-center gap-2">
                   <span className="inline-block h-[10px] w-8 rounded-full bg-[#8a91a6]" aria-hidden="true" />
-                  Main road
+                  Main Road
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="inline-block h-[4px] w-8 rounded-full border-t-[4px] border-dashed" style={{ borderColor: SIDE }} aria-hidden="true" />
-                  Optional side path, doesn’t block your goal
+                  Optional Side Path, Doesn’t Block Your Goal
                 </span>
               </div>
             )}
@@ -2535,7 +2459,7 @@ const UserRoadMap = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     {activeIsSide ? (
                       <span className="rounded-full px-3 py-1 text-xs font-extrabold text-white" style={{ backgroundColor: SIDE }}>
-                        Optional side quest
+                        Optional Side Quest
                       </span>
                     ) : (
                       <span className="text-sm font-bold text-neutral-500">
@@ -2545,7 +2469,7 @@ const UserRoadMap = () => {
                     {activeDone ? (
                       <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-extrabold text-[#2f9e62]">Done</span>
                     ) : active === nextIdx ? (
-                      <span className="rounded-full bg-[#2f80e0] px-3 py-1 text-xs font-extrabold text-white">Next up</span>
+                      <span className="rounded-full bg-[#2f80e0] px-3 py-1 text-xs font-extrabold text-white">Next Up</span>
                     ) : null}
                     {sub(activeStep) && (
                       <span className="rounded-full bg-[#f3e6d3] px-3 py-1 text-xs font-bold text-neutral-700">{sub(activeStep)}</span>
@@ -2555,7 +2479,7 @@ const UserRoadMap = () => {
                     )}
                     {plan.alongside[active] && (
                       <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
-                        Alongside step {plan.alongside[active]}
+                        Alongside Step {plan.alongside[active]}
                       </span>
                     )}
                   </div>
@@ -2581,8 +2505,8 @@ const UserRoadMap = () => {
 
                 <div className="mt-3 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
                   <details className="group">
-                    <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-bold text-[#0b0b2b] [&::-webkit-details-marker]:hidden">
-                      Find courses for this step
+                    <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-bold text-neutral-500 [&::-webkit-details-marker]:hidden">
+                      Find Courses For This Step
                       <Chevron className="!h-4 !w-4" />
                     </summary>
                     <div className="mt-2">
@@ -2631,27 +2555,21 @@ const UserRoadMap = () => {
         </>
       )}
 
-      {/* Learning resources: every block spans the full width and its tiles share the row evenly */}
+      {/* Learning resources */}
       <section>
-        <h2 className="text-xl font-extrabold text-black">Learning resources</h2>
-        <div className="text-sm text-neutral-500">Courses for {career.title} and the skills it uses</div>
+        <h2 className="text-xl font-extrabold text-black">Learning Resources</h2>
+        <div className="text-sm text-neutral-500">{tc(`Courses for ${career.title} and the skills it uses`)}</div>
 
         <div className="mt-4 space-y-4">
-          <div className="flex flex-col gap-4 rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <Label>Find courses</Label>
-              <div className="mt-1 text-sm text-neutral-600">
-                These links open search results on each platform, so you can compare and pick.
-              </div>
-            </div>
-            <div className="shrink-0">
-              <CourseLinks topic={career.title ?? ''} />
-            </div>
+          {/* quiet strip, not a card: just a line of small text links */}
+          <div className="flex flex-col gap-2 px-1 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-xs text-neutral-500">Search for {career.title} courses on:</div>
+            <CourseLinks topic={career.title ?? ''} />
           </div>
 
           {!need.length && courseSkills.length > 0 && (
             <div className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
-              <Label>Skills this career uses</Label>
+              <Label>Skills This Career Uses</Label>
               <div className="mt-3 grid gap-3" style={fit(290)}>
                 {courseSkills.map((skill) => (
                   <SkillRow key={skill} skill={skill} />
@@ -2663,8 +2581,8 @@ const UserRoadMap = () => {
           {(() => {
             const groups = [
               // technical and other skills are shown together as one group
-              { label: 'Technical & other', items: uniq([...technical, ...other]), bg: 'bg-[#eaf1fc]', chip: 'border-[#c6dbf6]', ink: 'text-[#2f80e0]' },
-              { label: 'Soft skills', items: soft, bg: 'bg-[#eaf6ef]', chip: 'border-[#bfe3cd]', ink: 'text-[#2f9e62]' },
+              { label: 'Technical & Other', items: uniq([...technical, ...other]), bg: 'bg-[#eaf1fc]', chip: 'border-[#c6dbf6]', ink: 'text-[#2f80e0]' },
+              { label: 'Soft Skills', items: soft, bg: 'bg-[#eaf6ef]', chip: 'border-[#bfe3cd]', ink: 'text-[#2f9e62]' },
             ].filter((g) => g.items.some((x) => chipText(x)))
             return groups.length > 0 ? (
               <div className="grid gap-4" style={fit(260)}>
@@ -2680,30 +2598,32 @@ const UserRoadMap = () => {
 
           {hasEdu && (
             <div className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
-              <Label>Education and certificates</Label>
-              <div className="mt-3 grid gap-4" style={fit(230)}>
+              <Label>Education and Certificates</Label>
+              <div className="mt-3 flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                 {roadmap.education?.typical && (
-                  <div className="rounded-2xl bg-[#0b0b2b] p-4 text-white">
-                    <div className="text-xs font-bold uppercase tracking-wide text-white/60">Typical education</div>
-                    <div className="mt-1 text-lg font-extrabold leading-snug">{text(roadmap.education.typical)}</div>
+                  <div className="w-full sm:w-[340px]">
+                    <Label>Typical Education</Label>
+                    <div className="mt-2 rounded-2xl bg-[#0b0b2b] p-4 text-white">
+                      <div className="text-lg font-extrabold leading-snug">{text(roadmap.education.typical)}</div>
+                    </div>
                   </div>
                 )}
                 {programs.some((x) => chipText(x)) && (
                   <div>
-                    <Label>Related programs</Label>
-                    <Chips items={programs} />
+                    <Label>Related Programs</Label>
+                    <Chips items={programs} rows={2} />
                   </div>
                 )}
                 {reported.some((x) => chipText(x)) && (
                   <div>
-                    <Label>Reported by people in this job</Label>
-                    <Chips items={reported} />
+                    <Label>Reported by People in This Job</Label>
+                    <Chips items={reported} stack />
                   </div>
                 )}
                 {certificates.some((x) => chipText(x)) && (
                   <div>
                     <Label cls="text-[#8b5cf6]">Certificates</Label>
-                    <Chips items={certificates} cls="border-[#d9ccfa]" />
+                    <Chips items={certificates} stack />
                   </div>
                 )}
               </div>
@@ -2715,12 +2635,12 @@ const UserRoadMap = () => {
       {/* Skills check */}
       {(have.length > 0 || need.length > 0) && (
         <section>
-          <h2 className="text-xl font-extrabold text-black">Skills check</h2>
-          <div className="text-sm text-neutral-500">Based on the skills you entered in this prediction</div>
+          <h2 className="text-xl font-extrabold text-black">Skills Check</h2>
+          <div className="text-sm text-neutral-500">Based on the Skills You Entered in This Prediction</div>
 
           <div className="mt-4 space-y-4">
             <div className="rounded-3xl bg-[#eaf6ef] p-5">
-              <Label cls="text-[#2f9e62]">You already have</Label>
+              <Label cls="text-[#2f9e62]">You Already Have</Label>
               {have.length ? (
                 <Chips items={have} cls="border-[#bfe3cd]" />
               ) : (
@@ -2729,7 +2649,7 @@ const UserRoadMap = () => {
             </div>
 
             <div className="rounded-3xl bg-[#fcecec] p-5">
-              <Label cls="text-[#e0404a]">Still to build</Label>
+              <Label cls="text-[#e0404a]">Still to Build</Label>
               {need.length ? (
                 <div className="mt-3 grid gap-3" style={fit(290)}>
                   {need.map((skill) => (
@@ -2744,7 +2664,8 @@ const UserRoadMap = () => {
         </section>
       )}
 
-      {roadmap.note && <div className="text-sm leading-relaxed text-neutral-500">{text(roadmap.note)}</div>}
+      {/* footnote: all lowercase on purpose */}
+      {roadmap.note && <div className="text-sm leading-relaxed text-neutral-500 lowercase">{text(roadmap.note)}</div>}
 
       <div className="flex flex-wrap items-center gap-3 pb-4">
         <Link

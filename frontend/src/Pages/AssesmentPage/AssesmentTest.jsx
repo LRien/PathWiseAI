@@ -679,7 +679,7 @@ const AssesmentTest = () => {
             <span aria-hidden="true">←</span> Back
           </button>
           <h1 className="text-4xl font-black tracking-tight text-black sm:text-5xl">Tell us about yourself</h1>
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-neutral-700">
+          <p className="mt-4 text-justify text-sm leading-relaxed text-neutral-700">
             Fill in your personality type, academic background, skills, and a short description. Our AI
             will analyze your profile and return your top career matches.
           </p>
@@ -901,8 +901,7 @@ const AssesmentTest = () => {
         </div>
 
         <p className="mt-6 text-xs leading-relaxed text-neutral-600">
-          Your responses will be used to generate personalized career recommendations and will be handled
-          in accordance with the study&apos;s Privacy Notice.
+          Your responses will be used to generate personalized career recommendations and will be handled in accordance with the study’s privacy notice.
         </p>
 
         {submitError && (

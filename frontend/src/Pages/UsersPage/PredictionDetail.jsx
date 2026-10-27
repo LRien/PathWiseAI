@@ -26,14 +26,6 @@ const pct = (c) => {
   return Math.max(0, Math.min(100, Math.round(v)))
 }
 
-const fmtDate = (iso) => {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? ''
-    : d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-
 /* NOTE: text uses <div>/<span> with explicit sizes, because the global p { font-size: var(--text-body) } rule overrides Tailwind sizes */
 
 /* entrance: a block stays invisible until `play` is true (loader gone), then rises in.
@@ -51,17 +43,18 @@ const Label = ({ children, className = 'text-neutral-500' }) => (
 )
 
 const SKILL_TABS = [
+  ['soft', 'Soft'],
   ['technical', 'Technical'],
   ['other', 'Other'],
-  ['soft', 'Soft'],
 ]
 
+/* flat, smooth rectangles so the skills don't look clickable */
 const Chips = ({ items, className = '' }) => (
   <ul className="mt-2 flex flex-wrap gap-2">
     {items.map((s, i) => (
       <li
         key={`${text(s)}-${i}`}
-        className={`max-w-full break-words rounded-full border bg-white px-3 py-1 text-xs leading-4 text-neutral-700 ${className}`}
+        className={`max-w-full cursor-default select-text break-words rounded-md bg-white px-3 py-1.5 text-xs font-semibold leading-4 text-neutral-800 ${className}`}
       >
         {text(s)}
       </li>
@@ -166,7 +159,7 @@ const ChoiceCard = ({ selected, saving, onGo, play }) => (
 
 /* ---------- right column: folder tabs + career details ---------- */
 const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) => {
-  const [skillTab, setSkillTab] = useState('technical')
+  const [skillTab, setSkillTab] = useState('soft')
   const c = recs[focus] ?? recs[0]
   const reasons = reasonsOf(c)
   const fallback = whyText(c)
@@ -320,7 +313,7 @@ const CareerFolder = ({ recs, focus, setFocus, selected, setSelected, play }) =>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4">
-          <div className="min-w-0 text-sm text-neutral-500">Selecting saves this career and unlocks its roadmap.</div>
+          <div className="min-w-0 text-sm text-neutral-500">Selecting Saves This Career And Unlocks Its Roadmap</div>
           <button
             type="button"
             onClick={() => setSelected(c.title)}
@@ -343,8 +336,8 @@ const AvoidSection = ({ avoid, play }) => (
     className="detail-rise rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm sm:p-6"
     style={riseStyle(play, 3)}
   >
-    <h2 className="text-base font-extrabold text-black">Careers to avoid</h2>
-    <div className="text-sm text-neutral-500">Fields that may be a weaker fit for this profile</div>
+    <h2 className="text-base font-extrabold text-black">Careers To Avoid</h2>
+    <div className="text-sm text-neutral-500">Fields That May Be A Weaker Fit For This Profile</div>
     <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
       {avoid.map((a, i) => (
         <li
@@ -444,7 +437,6 @@ const PredictionDetail = () => {
   const { assessment, insights } = pred
   const recs = list(pred.recommended).slice(0, 3)
   const avoid = list(pred.avoid).slice(0, 3)
-  const date = fmtDate(pred.createdAt)
 
   const goToRoadmap = async () => {
     if (!selected) return
@@ -468,17 +460,27 @@ const PredictionDetail = () => {
         @media (prefers-reduced-motion: reduce) { .detail-rise { animation: none !important; opacity: 1 !important; transform: none !important; } }
       `}</style>
 
-      <header className="detail-rise min-w-0" style={riseStyle(play, 0)}>
-        <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
-          ← Back to history
-        </Link>
-        <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">
-          Your top 3 careers
-        </h1>
-        <div className="mt-1 text-sm leading-relaxed text-neutral-600">
-          Prediction #{pred.number}
-          {date ? ` made on ${date}` : ''}. Pick one to see its roadmap.
+      {/* Page heading: same layout as the dashboard (title on the left, New prediction on the right) */}
+      <header
+        className="detail-rise flex flex-wrap items-center justify-between gap-4"
+        style={riseStyle(play, 0)}
+      >
+        <div className="min-w-0">
+          <Link to="/dashboard/recommendations" className="text-sm font-bold text-[#0b0b2b] hover:underline">
+            ← Back to history
+          </Link>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-black sm:text-4xl">
+            Your Top 3 Careers
+          </h1>
         </div>
+
+        <Link
+          to="/assessment-test"
+          className="inline-flex shrink-0 items-center gap-2 rounded-full bg-[#0b0b2b] px-5 py-3 text-xs font-extrabold uppercase tracking-wide text-white shadow-sm transition hover:bg-[#1a1a4a] focus:outline-none focus:ring-2 focus:ring-[#0b0b2b]/30"
+        >
+          <span aria-hidden="true" className="text-base leading-none">+</span>
+          New prediction
+        </Link>
       </header>
 
       {actionError && (
@@ -520,7 +522,7 @@ const PredictionDetail = () => {
       {avoid.length > 0 && <AvoidSection avoid={avoid} play={play} />}
 
       {str(insights?.disclaimer) && (
-        <div className="detail-rise text-xs leading-relaxed text-neutral-500" style={riseStyle(play, 4)}>
+        <div className="detail-rise text-xs leading-relaxed text-neutral-500 lowercase" style={riseStyle(play, 4)}>
           {insights.disclaimer}
         </div>
       )}
