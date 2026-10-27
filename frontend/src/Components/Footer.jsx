@@ -23,7 +23,7 @@ const Footer = () => {
           <div className="ft-about">
             <h3 className="ft-brand">CAREER MATCH</h3>
             <p>
-              Career Match is an undergraduate thesis project developed to
+              Career Match is a thesis project developed to
               explore the use of machine learning in providing personality-based
               career guidance for students.
             </p>
@@ -51,7 +51,7 @@ const Footer = () => {
 
         <div className="ft-bottom">
           <span>©2026 CAREER MATCH. ALL RIGHTS RESERVED</span>
-          <span>DEVELOPED AND CREATED BY GROUP 3</span>
+          <span>WHERE IDEAS BECOME REALITY</span>
         </div>
       </div>
     </footer>
