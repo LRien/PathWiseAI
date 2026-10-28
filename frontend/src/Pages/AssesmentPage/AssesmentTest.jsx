@@ -347,8 +347,9 @@ const Card = ({ n, title, optional, children }) => (
   </section>
 )
 
+/* text-base on phones (16px) stops mobile browsers from zooming the page when an input is focused */
 const inputCls =
-  'w-full rounded-xl border border-[#e0d1ba] bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#0b0b2b] focus:ring-2 focus:ring-[#0b0b2b]/15'
+  'w-full rounded-xl border border-[#e0d1ba] bg-white px-4 py-3 text-base text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#0b0b2b] focus:ring-2 focus:ring-[#0b0b2b]/15 sm:text-sm'
 
 /* ------------------------------------------------------------------ */
 /* Loading animation: your career gets built, step by step             */
@@ -667,7 +668,7 @@ const AssesmentTest = () => {
   if (!localStorage.getItem('token')) return <Navigate to="/login" replace />
 
   return (
-    <main className="min-h-screen bg-[#f3e7d6] px-4 pb-16 pt-10 text-neutral-900 sm:pt-14">
+    <main className="min-h-screen overflow-x-hidden bg-[#f3e7d6] px-4 pb-16 pt-10 text-neutral-900 sm:pt-14">
       <form onSubmit={submit} onKeyDown={blockEnterSubmit} className="mx-auto w-full max-w-3xl">
         <header>
           <button
@@ -678,20 +679,21 @@ const AssesmentTest = () => {
           >
             <span aria-hidden="true">←</span> Back
           </button>
-          <h1 className="text-4xl font-black tracking-tight text-black sm:text-5xl">Tell us about yourself</h1>
-          <p className="mt-4 text-justify text-sm leading-relaxed text-neutral-700">
+          <h1 className="break-words text-4xl font-black tracking-tight text-black sm:text-5xl">Tell us about yourself</h1>
+          {/* left-aligned on phones: justified text leaves huge gaps between words on narrow screens */}
+          <p className="mt-4 text-left text-sm leading-relaxed text-neutral-700 sm:text-justify">
             Fill in your personality type, academic background, skills, and a short description. Our AI
             will analyze your profile and return your top career matches.
           </p>
         </header>
 
-        {/* stepper */}
-        <ol className="mt-8 flex items-center gap-2 overflow-x-auto pb-1 text-xs font-bold">
+        {/* stepper: on phones only the current step shows its name, so all four steps fit on one line */}
+        <ol className="mt-8 flex items-center gap-2 pb-1 text-xs font-bold">
           {steps.map((label, i) => {
             const isActive = i === active
             const isDone = i < 3 && done[i] && !isActive
             return (
-              <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
+              <li key={label} className="flex flex-none items-center gap-2 last:flex-none sm:flex-1">
                 <span
                   className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] ${
                     isActive
@@ -703,7 +705,11 @@ const AssesmentTest = () => {
                 >
                   {isDone ? '✓' : i + 1}
                 </span>
-                <span className={`whitespace-nowrap ${isActive || isDone ? 'text-[#0b0b2b]' : 'text-[#8a7a60]'}`}>
+                <span
+                  className={`whitespace-nowrap ${isActive ? 'inline' : 'hidden sm:inline'} ${
+                    isActive || isDone ? 'text-[#0b0b2b]' : 'text-[#8a7a60]'
+                  }`}
+                >
                   {label}
                 </span>
                 {i < steps.length - 1 && <span className="hidden h-px flex-1 bg-[#d9c8ae] sm:block" />}
@@ -808,7 +814,7 @@ const AssesmentTest = () => {
                     type="button"
                     aria-pressed={on}
                     onClick={() => toggleSkill(s)}
-                    className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${on ? c.on : `bg-white ${c.off}`}`}
+                    className={`max-w-full rounded-full border px-4 py-1.5 text-sm font-medium transition ${on ? c.on : `bg-white ${c.off}`}`}
                   >
                     {on && <span className="mr-1">✓</span>}
                     {s}
@@ -817,7 +823,7 @@ const AssesmentTest = () => {
               })}
             </div>
 
-            <div className="mt-3 flex items-center gap-4 text-xs">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <button
                 type="button"
                 onClick={() => setSkillSeed((n) => n + 1)}
@@ -884,7 +890,7 @@ const AssesmentTest = () => {
                       type="button"
                       disabled={used}
                       onClick={() => addSuggestion(t)}
-                      className={`rounded-xl border px-3 py-1.5 text-left text-xs transition ${
+                      className={`max-w-full rounded-xl border px-3 py-1.5 text-left text-xs transition ${
                         used
                           ? 'cursor-default border-[#f2c230] bg-[#f2c230]/30 text-[#7a5a08]'
                           : 'border-[#e0d1ba] bg-white text-neutral-700 hover:border-[#0b0b2b]/60 hover:bg-[#f7efe2]'

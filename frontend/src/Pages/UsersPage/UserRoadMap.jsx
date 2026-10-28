@@ -98,6 +98,10 @@ const title = (x) => {
 /*   graduation -> job search.                                         */
 /* Steps that run at the same time get an "alongside step N" note.     */
 /* If a roadmap has no readable timing, its order is left untouched.   */
+/*                                                                     */
+/* Only the FIRST degree step is "graduation" (primary). Any later     */
+/* degree step (e.g. a graduate / professional degree) comes AFTER it. */
+/* Steps with unreadable timing stay right after the step before them. */
 /* ------------------------------------------------------------------ */
 const NUM = '(\\d+(?:\\.\\d+)?)'
 const RNG = `${NUM}(?:\\s*(?:-|–|to)\\s*${NUM})?`
@@ -131,14 +135,16 @@ const isJob = (t) =>
 const arrangeSteps = (raw) => {
   const items = raw.map((s, idx) => {
     const t = title(s)
-    return { s, key: String(idx), t, tm: readTiming(sub(s)), edu: isEdu(t), intern: isIntern(t), job: isJob(t), win: null }
+    return { s, key: String(idx), t, tm: readTiming(sub(s)), edu: isEdu(t), primary: false, intern: isIntern(t), job: isJob(t), win: null }
   })
   if (!items.length) return []
 
-  // how long school lasts (months), only when the roadmap includes a degree step
+  // how long school lasts (months), only when the roadmap includes a degree step.
+  // The FIRST degree step is the main one (graduation); later degree steps come after it.
   const eduItem = items.find((x) => x.edu)
   let gradEnd = null
   if (eduItem) {
+    eduItem.primary = true
     const tm = eduItem.tm
     gradEnd = tm?.kind === 'dur' ? tm.months : tm?.kind === 'span' ? tm.end : 48
   }
@@ -152,25 +158,30 @@ const arrangeSteps = (raw) => {
     if (tm?.kind === 'span') win = { start: tm.start, end: tm.end }
     else if (tm?.kind === 'last' && gradEnd != null) win = { start: Math.max(0, gradEnd - tm.len), end: gradEnd }
     else if (tm?.kind === 'after' && gradEnd != null) win = { start: gradEnd + tm.a, end: gradEnd + tm.b }
-    else if (x.edu && gradEnd != null) win = { start: 0, end: gradEnd }
-    else if (x.intern && gradEnd != null) win = { start: Math.max(0, gradEnd - 12), end: gradEnd }
+    else if (x.primary && gradEnd != null) win = { start: 0, end: gradEnd }
+    else if (x.edu && gradEnd != null) {
+      // a later degree (graduate / professional) starts once the first degree is done
+      const len = tm?.kind === 'dur' ? tm.months : 24
+      win = { start: gradEnd, end: gradEnd + len }
+    } else if (x.intern && gradEnd != null) win = { start: Math.max(0, gradEnd - 12), end: gradEnd }
     else if (x.job && gradEnd != null) win = { start: gradEnd, end: gradEnd + 6 }
     if (win) x.win = win
     else {
       x.win = prev ? { start: prev.start, end: prev.end } : { start: 0, end: 0 } // unknown: stay right after the previous step
       x.guess = true
     }
-    // "Complete the degree" means graduating, so it sorts at the END of school (after the skills and internship done during it)
-    x.sortKey = x.edu && gradEnd != null ? gradEnd - 0.01 : x.guess ? prevKey : x.win.start
+    // "Complete the degree" means graduating, so it sorts at the END of school (after the skills and internship done during it).
+    // A step with unknown timing sorts just AFTER the step before it, so it never jumps ahead of a degree.
+    x.sortKey = x.primary && gradEnd != null ? gradEnd - 0.01 : x.guess ? prevKey + 0.001 : x.win.start
     prev = x.win
     prevKey = x.sortKey
   })
 
-  const rank = (x) => (x.edu ? 1 : 0)
+  const rank = (x) => (x.primary ? 1 : 0)
   const phaseOf = (x) =>
     gradEnd == null || x.guess
       ? ''
-      : x.edu
+      : x.primary
         ? 'Graduation'
         : x.win.start >= gradEnd
           ? 'After graduating'
@@ -335,7 +346,7 @@ const rainDown = (root, count = 100) => {
 /*   ex, ey = island thickness (0 = flat)                               */
 /*   OX, OY = room for the sky (clouds, sun, plane) above the island    */
 /* ------------------------------------------------------------------ */
-const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110, GAP: 150 }
+const P = { W: 400, ROW: 150, TOP: 118, FIRST: 214, LEFT: 92, RIGHT: 308, SIDE0: 105, SIDE: 110, GAP: 170 }
 
 const ISO = {
   port: { k: 0, c: 1, OX: 22, OY: 100, ex: 0, ey: 0, padR: 26, padB: 40 },
@@ -959,6 +970,7 @@ const uniq = (arr) => {
   })
 }
 
+/* rows > 0: chips wrap normally on phones, and flow into that many rows from the sm breakpoint up */
 const Chips = ({ items, stack = false, rows = 0 }) => {
   const shown = items.map(chipText).filter(Boolean)
   if (!shown.length) return null
@@ -966,13 +978,13 @@ const Chips = ({ items, stack = false, rows = 0 }) => {
     <ul
       className={
         rows
-          ? 'mt-2 grid grid-flow-col auto-cols-max justify-start gap-x-4 gap-y-2'
+          ? 'mt-2 flex max-w-full flex-wrap gap-2 sm:grid sm:grid-flow-col sm:auto-cols-max sm:justify-start sm:gap-x-4 sm:gap-y-2 sm:overflow-x-auto'
           : `mt-2 flex gap-2 ${stack ? 'flex-col items-start' : 'flex-wrap'}`
       }
       style={rows ? { gridTemplateRows: `repeat(${rows}, auto)` } : undefined}
     >
       {shown.map((t, i) => (
-        <li key={`${t}-${i}`} className="rounded-xl bg-white px-4 py-1.5 text-[13px] font-bold text-black">
+        <li key={`${t}-${i}`} className="max-w-full break-words rounded-xl bg-white px-4 py-1.5 text-[13px] font-bold text-black">
           {t}
         </li>
       ))}
@@ -988,12 +1000,6 @@ const Label = ({ children, cls = 'text-neutral-500' }) => (
   <div className={`text-xs font-bold uppercase tracking-wide ${cls}`}>{children}</div>
 )
 
-const Chevron = ({ className = '' }) => (
-  <svg viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 text-neutral-500 transition group-open:rotate-180 ${className}`} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M6 9l6 6 6-6" />
-  </svg>
-)
-
 /* one skill tile: the name, with quiet course links right below it */
 const SkillRow = ({ skill }) => (
   <div className="min-w-0 rounded-2xl bg-white/70 p-3">
@@ -1003,7 +1009,7 @@ const SkillRow = ({ skill }) => (
 )
 
 /* tiles share the row evenly: as many columns as fit, and they stretch to fill the width */
-const fit = (min) => ({ gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))` })
+const fit = (min) => ({ gridTemplateColumns: `repeat(auto-fit, minmax(min(${min}px, 100%), 1fr))` })
 
 /* ------------------------------------------------------------------ */
 /* Cheer: your character greets you, then keeps cheering you on        */
@@ -1113,7 +1119,7 @@ const MiniCheer = ({ code, theme, progress, allDone, celebrate, nextTitle, hasSi
         <div
           key={msg}
           className={`mini-bubble relative rounded-2xl border-2 border-[#0b0b2b] bg-white px-3 py-2 font-bold leading-snug text-black shadow-md ${
-            big ? 'mb-9 max-w-[280px] text-sm' : 'mb-4 max-w-[min(210px,56vw)] text-[11px]'
+            big ? 'mb-9 max-w-[280px] text-sm' : 'mb-4 max-w-[min(190px,52vw)] text-[11px]'
           }`}
           style={{ animation: 'miniBubbleIn .3s ease-out' }}
           role="status"
@@ -1282,7 +1288,7 @@ const UserRoadMap = () => {
     const arranged = arrangeSteps(list(road?.roadmap?.timeline?.steps))
     const steps = arranged.map((a) => a.s)
     const keys = arranged.map((a) => a.key) // saved-progress keys (original index, so old progress still matches)
-    const all = arranged.map((a, i) => ({ i, s: a.s, k: a.key, opt: isOptional(a.s), phase: a.phase, guess: a.guess, edu: a.edu, win: a.win }))
+    const all = arranged.map((a, i) => ({ i, s: a.s, k: a.key, opt: isOptional(a.s), phase: a.phase, guess: a.guess, edu: a.edu, primary: a.primary, win: a.win }))
     let main = all.filter((x) => !x.opt)
     if (!main.length) main = all // everything optional? then treat all as main so the map still works
     const mainSet = new Set(main.map((x) => x.i))
@@ -1303,7 +1309,7 @@ const UserRoadMap = () => {
       })
     /* main steps done while studying (e.g. skills built during school) point at the degree step */
     const alongside = {}
-    const eduPos = main.findIndex((x) => x.edu && !x.guess)
+    const eduPos = main.findIndex((x) => x.primary && !x.guess)
     if (eduPos >= 0) {
       const y = main[eduPos]
       main.forEach((x) => {
@@ -2151,7 +2157,7 @@ const UserRoadMap = () => {
                   <div
                     aria-hidden="true"
                     onClick={() => setFocusIdx(i)}
-                    className={`pop-label w-[min(190px,34cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
+                    className={`pop-label w-[min(190px,36cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 ${
                       onLeft ? 'text-left' : 'text-right'
                     }`}
                     style={HIDDEN}
@@ -2196,14 +2202,15 @@ const UserRoadMap = () => {
             const labelBody = (
               <>
                 <div
-                  className={`line-clamp-2 text-[12px] font-extrabold leading-tight ${
+                  className={`line-clamp-2 break-words text-[12px] font-extrabold leading-tight ${
                     checked ? 'text-neutral-400 line-through' : 'text-black'
                   }`}
                 >
                   {title(step)}
                 </div>
+                {/* on phones the duration stays in the focus card, so this label stays short and never hits the next stop */}
                 <div className="mt-0.5 text-[10px] font-bold" style={{ color: SIDE }}>
-                  Side Quest{sub(step) ? ` · ${sub(step)}` : ''}
+                  Side Quest{land && sub(step) ? ` · ${sub(step)}` : ''}
                 </div>
               </>
             )
@@ -2257,7 +2264,7 @@ const UserRoadMap = () => {
                     <div
                       aria-hidden="true"
                       onClick={() => setFocusIdx(i)}
-                      className="pop-label w-[min(112px,26cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
+                      className="pop-label w-[min(124px,32cqw)] shrink-0 cursor-pointer rounded-xl bg-[#fff9ea]/90 px-2 py-1 text-center"
                       style={HIDDEN}
                     >
                       {labelBody}
@@ -2508,18 +2515,8 @@ const UserRoadMap = () => {
                     )}
                   </div>
 
-                  <div className="mt-3 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
-                    <details className="group">
-                      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-bold text-neutral-500 [&::-webkit-details-marker]:hidden">
-                        Find Courses For This Step
-                        <Chevron className="!h-4 !w-4" />
-                      </summary>
-                      <div className="mt-2">
-                        <CourseLinks topic={title(activeStep)} />
-                      </div>
-                    </details>
-
-                    <div className="mt-4 flex items-center gap-2">
+                  <div className="mt-4 min-w-0 lg:mt-0 lg:flex lg:items-center lg:border-l lg:border-[#e6d8c3] lg:pl-6">
+                    <div className="flex w-full items-center gap-2">
                       <button
                         type="button"
                         onClick={finishActive}
@@ -2593,7 +2590,7 @@ const UserRoadMap = () => {
             return groups.length > 0 ? (
               <div className="grid gap-4" style={fit(260)}>
                 {groups.map((g) => (
-                  <div key={g.label} className={`rounded-3xl p-5 ${g.bg}`}>
+                  <div key={g.label} className={`min-w-0 rounded-3xl p-5 ${g.bg}`}>
                     <Label cls={g.ink}>{g.label}</Label>
                     <Chips items={g.items} cls={g.chip} />
                   </div>
@@ -2603,31 +2600,33 @@ const UserRoadMap = () => {
           })()}
 
           {hasEdu && (
-            <div className="rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
+            <div className="min-w-0 overflow-hidden rounded-3xl border border-[#e6d8c3] bg-[#fbf6ee] p-5 shadow-sm">
               <Label>Education and Certificates</Label>
-              <div className="mt-3 flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+              <div className="mt-3 flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                 {roadmap.education?.typical && (
-                  <div className="w-full sm:w-[340px]">
+                  <div className="w-full min-w-0 sm:w-[340px]">
                     <Label>Typical Education</Label>
                     <div className="mt-2 rounded-2xl bg-[#0b0b2b] p-4 text-white">
-                      <div className="text-lg font-extrabold leading-snug">{text(roadmap.education.typical)}</div>
+                      <div className="text-base font-extrabold leading-snug [overflow-wrap:anywhere] sm:text-lg">
+                        {text(roadmap.education.typical)}
+                      </div>
                     </div>
                   </div>
                 )}
                 {programs.some((x) => chipText(x)) && (
-                  <div>
+                  <div className="min-w-0 max-w-full">
                     <Label>Related Programs</Label>
                     <Chips items={programs} rows={2} />
                   </div>
                 )}
                 {reported.some((x) => chipText(x)) && (
-                  <div>
+                  <div className="min-w-0 max-w-full">
                     <Label>Reported by People in This Job</Label>
                     <Chips items={reported} stack />
                   </div>
                 )}
                 {certificates.some((x) => chipText(x)) && (
-                  <div>
+                  <div className="min-w-0 max-w-full">
                     <Label cls="text-[#8b5cf6]">Certificates</Label>
                     <Chips items={certificates} stack />
                   </div>
