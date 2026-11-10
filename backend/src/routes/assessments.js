@@ -4,6 +4,7 @@ import { Router } from 'express'
 import { supabase } from '../config/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
 import { createPrediction, PredictionError } from '../services/predictionService.js'
+import { toEnglish } from '../services/translate.js'
 
 const router = Router()
 
@@ -49,13 +50,55 @@ const formatAssessment = (a) => ({
   createdAt: a.created_at ?? null,
 })
 
+// Removes stray symbols/emojis and extra whitespace from free text before it goes to the model.
+// Keeps letters (any language), numbers, spaces and basic punctuation (+ and # stay for C++ / C#).
+const cleanText = (s) =>
+  String(s ?? '')
+    .normalize('NFKC')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[^\p{L}\p{N}\s.,!?'"()\-:;&%+#]/gu, ' ')
+    .replace(/([.,!?\-:;])\1{2,}/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+// Translates the free-text parts of an assessment to English for the model.
+// The saved row keeps the user's original text; only the copy sent to the model is cleaned and translated.
+// toEnglish never throws: if translation fails, the original text is used.
+async function translateAssessment(a) {
+  const original = a.skills ?? []
+  const [degree, preference, ...skillsEn] = await toEnglish([
+    a.degree_program,
+    cleanText(a.career_preference),
+    ...original,
+  ])
+
+  const skills = [...new Set(skillsEn.filter(Boolean))]
+
+  const translated = {
+    ...a,
+    degree_program: degree || a.degree_program,
+    career_preference: preference,
+    skills: skills.length ? skills : original,
+  }
+
+  console.log('[assessment] Sent to model:', {
+    degree: translated.degree_program,
+    skills: translated.skills,
+    preference: translated.career_preference,
+  })
+
+  return translated
+}
+
 // Users whose prediction is currently running (prevents double-clicks / duplicate rows)
 const inFlight = new Set()
 
 // Runs the prediction for an already-saved assessment and sends the HTTP response
 async function runPrediction(res, userId, assessment) {
   try {
-    const predictionId = await createPrediction({ userId, assessment })
+    const forModel = await translateAssessment(assessment)
+    const predictionId = await createPrediction({ userId, assessment: forModel })
     return res.status(201).json({ assessmentId: assessment.id, predictionId })
   } catch (err) {
     if (err instanceof PredictionError) {
@@ -74,7 +117,8 @@ router.use(requireAuth)
 
 // POST /api/assessments
 // Body: { mbti, degreeProgram, skills: [...], careerPreference }
-// 1) saves the inputs in Supabase  2) sends them to Hugging Face  3) stores the prediction
+// 1) saves the inputs in Supabase  2) translates them to English  3) sends them to Hugging Face
+// 4) stores the prediction
 router.post('/', async (req, res) => {
   const userId = req.user.id
 
@@ -89,7 +133,7 @@ router.post('/', async (req, res) => {
 
   inFlight.add(userId)
   try {
-    // 1. Store the inputs first
+    // 1. Store the inputs first (original text, exactly as the user typed it)
     const { data: assessment, error } = await supabase
       .from('assessments')
       .insert({ user_id: userId, ...parsed.value })
@@ -102,7 +146,7 @@ router.post('/', async (req, res) => {
     }
     console.log('[assessment] Saved', assessment.id)
 
-    // 2 + 3. Send to Hugging Face and store the prediction
+    // 2 + 3 + 4. Translate to English, send to Hugging Face and store the prediction
     return await runPrediction(res, userId, assessment)
   } finally {
     inFlight.delete(userId)
