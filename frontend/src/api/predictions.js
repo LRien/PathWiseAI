@@ -1,3 +1,4 @@
+// frontend: src/api/predictions.js
 import client from './client'
 
 // Dashboard: { stats, predictions[] } (newest first)
@@ -11,7 +12,7 @@ export const getPrediction = (id) => client.get(`/predictions/${id}`).then((r) =
 export const getLatestPrediction = () => client.get('/predictions/latest').then((r) => r.data.prediction)
 
 // Roadmap of the selected career: { career, roadmap }. Optional rank (1-3) to override.
-// roadmap.version === 2 -> render roadmap.plan with <RoadmapView />; version 1 -> old columns.
+// If no career is selected yet and no rank is given, the backend returns the rank 1 roadmap.
 export const getRoadmap = (id, rank) =>
   client.get(`/predictions/${id}/roadmap`, { params: rank ? { rank } : {} }).then((r) => r.data)
 
@@ -24,8 +25,10 @@ export const selectCareer = (id, career) =>
 // Errors: 409 = no more careers left (message from the Space, current results are unchanged),
 //         429 = redo limit reached, 502 = Space unavailable. Read e.response?.data?.message.
 // Can take 30-60+ seconds (Space call + new roadmaps), so it has its own long timeout.
+// NOTE: the body is an empty object {} (not null). A null body is sent as the text "null",
+// which express.json() rejects with a 400 before the route runs.
 export const redoPrediction = (id) =>
-  client.post(`/predictions/${id}/redo`, null, { timeout: 120000 }).then((r) => r.data.prediction)
+  client.post(`/predictions/${id}/redo`, {}, { timeout: 120000 }).then((r) => r.data.prediction)
 
 // Permanently deletes a prediction (and everything saved with it). Resolves to { deleted: true, id }.
 export const deletePrediction = (id) => client.delete(`/predictions/${id}`).then((r) => r.data)

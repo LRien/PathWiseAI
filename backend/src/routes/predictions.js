@@ -16,34 +16,63 @@ const one = (v) => (Array.isArray(v) ? v[0] : v)
 
 // Columns of career_roadmaps -> the clean shape the frontend receives
 const ROADMAP_COLUMNS =
-  'job_title, soft_skills, other_skills, technical_skills, education_typical, education_reported, related_programs, certificates, time_estimate, time_steps, note, roadmap, version'
+  'job_title, soft_skills, other_skills, technical_skills, education_typical, education_reported, related_programs, certificates, time_estimate, time_steps, note, roadmap, version, hours_per_week, total_hours, steps_count'
+
+const stepLabel = (x) =>
+  typeof x === 'string' ? x : x?.title ?? x?.name ?? x?.text ?? x?.step ?? x?.label ?? x?.description ?? ''
+
+// v2 roadmap steps -> the step shape the roadmap page already reads
+// ({ title, timeframe, details }), plus the raw substeps and hours for later use.
+function v2Steps(plan) {
+  const steps = Array.isArray(plan?.steps) ? plan.steps : []
+  return steps.map((st) => {
+    const substeps = (Array.isArray(st?.substeps) ? st.substeps : [])
+      .map((sb) => ({ title: String(stepLabel(sb)).trim(), hours: Number(sb?.hours) || 0 }))
+      .filter((sb) => sb.title)
+    return {
+      title: st?.title ?? '',
+      timeframe: st?.timeframe ?? null,
+      details: substeps.map((sb) => (sb.hours ? `${sb.title} (${sb.hours} h)` : sb.title)).join(' • '),
+      hours: substeps.reduce((a, sb) => a + sb.hours, 0),
+      substeps,
+    }
+  })
+}
 
 // version 1 = old rows (use the old columns). version 2 = full roadmap in `plan`
 // (plan.summary has the skills / education / certificates / skills-check block, plan.steps the step-by-step plan).
-const formatRoadmap = (r) =>
-  r
-    ? {
-        version: r.version ?? 1,
-        jobTitle: r.job_title,
-        skills: {
-          soft: r.soft_skills ?? [],
-          other: r.other_skills ?? [],
-          technical: r.technical_skills ?? [],
-        },
-        education: {
-          typical: r.education_typical,
-          reportedByWorkers: r.education_reported ?? [],
-          relatedPrograms: r.related_programs ?? [],
-        },
-        certificates: r.certificates ?? [],
-        timeline: {
-          estimatedTotal: r.time_estimate,
-          steps: r.time_steps ?? [],
-        },
-        note: r.note,
-        plan: r.roadmap ?? null,
-      }
-    : null
+// For version 2, timeline.steps is built from plan.steps so the roadmap page shows the new steps.
+const formatRoadmap = (r) => {
+  if (!r) return null
+
+  const plan = r.roadmap ?? null
+  const useV2 = (r.version ?? 1) >= 2 && Array.isArray(plan?.steps) && plan.steps.length > 0
+  const weeks = Number(plan?.skill_weeks)
+
+  return {
+    version: r.version ?? 1,
+    jobTitle: r.job_title,
+    skills: {
+      soft: r.soft_skills ?? [],
+      other: r.other_skills ?? [],
+      technical: r.technical_skills ?? [],
+    },
+    education: {
+      typical: r.education_typical,
+      reportedByWorkers: r.education_reported ?? [],
+      relatedPrograms: r.related_programs ?? [],
+    },
+    certificates: r.certificates ?? [],
+    timeline: {
+      estimatedTotal: useV2 && Number.isFinite(weeks) && weeks > 0 ? `${weeks} weeks` : r.time_estimate,
+      hoursPerWeek: r.hours_per_week ?? plan?.hours_per_week ?? null,
+      totalHours: r.total_hours ?? null,
+      steps: useV2 ? v2Steps(plan) : r.time_steps ?? [],
+    },
+    note: r.note,
+    plan,
+  }
+}
 
 /* ---------- technical skills (career_roadmaps.technical_skills) ----------
    The "You already have" / "Still to build" chips are built from the career's
@@ -147,6 +176,7 @@ async function sendPrediction(req, res, id) {
       selectedCareer: p.selected_career,
       redoCount: p.redo_count ?? 0,
       maxRedos: MAX_REDOS,
+      mbti: a?.mbti ?? null, // the roadmap page reads this for the character
       assessment: {
         mbti: a?.mbti ?? null,
         degreeProgram: a?.degree_program ?? null,
@@ -296,6 +326,8 @@ router.post('/:id/redo', async (req, res) => {
 
 // GET /api/predictions/:id/roadmap
 // Roadmap of the career the user selected. Optional: ?rank=1|2|3 to get a specific recommended career.
+// If nothing is selected yet (for example right after a redo) and no rank is given,
+// the best match (rank 1) is used instead of returning an error.
 router.get('/:id/roadmap', async (req, res) => {
   const { id } = req.params
   if (!UUID_RE.test(id)) return res.status(404).json({ message: 'Prediction not found' })
@@ -325,10 +357,10 @@ router.get('/:id/roadmap', async (req, res) => {
   } else if (p.selected_career) {
     query = query.eq('title', p.selected_career)
   } else {
-    return res.status(400).json({ message: 'Select a career first (or pass ?rank=1)' })
+    query = query.eq('rank', 1) // nothing selected yet (e.g. right after a redo): use the best match
   }
 
-  const { data: c, error: cErr } = await query.maybeSingle()
+  const { data: c, error: cErr } = await query.order('rank', { ascending: true }).limit(1).maybeSingle()
   if (cErr) {
     console.error('Get roadmap error:', cErr)
     return res.status(500).json({ message: 'Could not fetch roadmap' })
@@ -348,7 +380,7 @@ router.get('/:id/roadmap', async (req, res) => {
 // Body: { career: "Computer Systems Analysts" }  -> saves the "Select this career" choice
 router.patch('/:id/select', async (req, res) => {
   const { id } = req.params
-  const career = String(req.body.career || '').trim()
+  const career = String(req.body?.career || '').trim()
 
   if (!UUID_RE.test(id)) return res.status(404).json({ message: 'Prediction not found' })
   if (!career) return res.status(400).json({ message: 'Career is required' })
@@ -372,6 +404,7 @@ router.patch('/:id/select', async (req, res) => {
     .from('predictions')
     .update({ selected_career: career })
     .eq('id', id)
+    .eq('user_id', req.user.id)
 
   if (updateError) return res.status(500).json({ message: 'Could not select career' })
 
