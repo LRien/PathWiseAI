@@ -32,6 +32,10 @@ import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoad
 /* All map animations (entrance, preview walk, trail, walk, pulse,     */
 /* celebration) and the cheering character wait until the loader has   */
 /* finished and is gone (see animReady).                               */
+/*                                                                     */
+/* v2 roadmaps: each step can carry `substeps` ([{ title, hours }]).   */
+/* The focus card lists them with their hours, and the header shows    */
+/* the hours per week and the total hours of the whole roadmap.        */
 /* ------------------------------------------------------------------ */
 
 const BACK = '/dashboard'
@@ -65,6 +69,12 @@ const detail = (x) => {
   const d = x.details ?? x.description ?? ''
   return typeof d === 'string' && d !== text(x) ? d : ''
 }
+
+/* v2 steps: the small tasks inside a step, each with the hours it takes */
+const substepsOf = (x) =>
+  list(x?.substeps)
+    .map((sb) => ({ title: String(text(sb) || '').trim(), hours: Number(sb?.hours) || 0 }))
+    .filter((sb) => sb.title)
 
 /* Title Case: capitalise the first letter of every word ("build core skills" -> "Build Core Skills") */
 const tc = (s) => String(s ?? '').replace(/(^|[\s(/\-–])([a-z])/g, (_, a, b) => a + b.toUpperCase())
@@ -1219,14 +1229,15 @@ const UserRoadMap = () => {
         if (cancelled) return
         setPred({ ...p, mbti })
 
-        // Uses the career the user selected (saved in the database)
+        // Uses the career the user selected (saved in the database).
+        // If none is selected yet (e.g. right after "show me different careers"), the backend returns the best match.
         const rm = await getRoadmap(p.id)
         if (cancelled) return
         setRoad(rm)
         setStatus('ready')
       } catch (e) {
         if (cancelled) return
-        setMessage(e?.message || 'Something went wrong loading your roadmap.')
+        setMessage(e?.response?.data?.message || e?.message || 'Something went wrong loading your roadmap.')
         setStatus('blocked')
       }
     }
@@ -1835,6 +1846,14 @@ const UserRoadMap = () => {
   const activeWhere = plan.where[active]
   const activeIsSide = activeWhere?.kind === 'side'
 
+  /* v2: the small tasks inside the step in focus, and the hours they add up to */
+  const activeSubs = substepsOf(activeStep)
+  const activeHours = activeSubs.reduce((sum, sb) => sum + sb.hours, 0)
+
+  /* v2: hours per week and total hours for the whole roadmap (shown in the header) */
+  const hoursPerWeek = Number(roadmap.timeline?.hoursPerWeek) || 0
+  const totalHours = Number(roadmap.timeline?.totalHours) || 0
+
   const match = list(pred.recommended).find((c) => c.title === career.title)
   const have = list(match?.skillsHave)
   const need = [...new Set(list(match?.skillsToBuild).map(text).filter(Boolean))]
@@ -2344,6 +2363,8 @@ const UserRoadMap = () => {
               {mainSteps.length} Steps
               {sideTotal > 0 ? ` + ${sideTotal} Optional` : ''}
               {totalLabel ? ` · About ${totalLabel} From Scratch` : ''}
+              {hoursPerWeek > 0 ? ` · ${hoursPerWeek} h/Week` : ''}
+              {totalHours > 0 ? ` · ${totalHours} h Total` : ''}
             </div>
           </div>
           <span className="shrink-0 whitespace-nowrap rounded-full bg-[#0b0b2b] px-4 py-2 text-sm font-extrabold text-white">
@@ -2486,6 +2507,9 @@ const UserRoadMap = () => {
                       {sub(activeStep) && (
                         <span className="rounded-full bg-[#f3e6d3] px-3 py-1 text-xs font-bold text-neutral-700">{sub(activeStep)}</span>
                       )}
+                      {activeHours > 0 && (
+                        <span className="rounded-full bg-[#fff3cf] px-3 py-1 text-xs font-bold text-[#7a5a08]">{activeHours} h</span>
+                      )}
                       {plan.all[active]?.phase && (
                         <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
                       )}
@@ -2504,8 +2528,29 @@ const UserRoadMap = () => {
                       {title(activeStep)}
                     </div>
 
-                    {detail(activeStep) && (
-                      <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
+                    {/* v2 steps list their small tasks with hours; older roadmaps keep the plain description */}
+                    {activeSubs.length > 0 ? (
+                      <ul className="mt-3 space-y-1.5">
+                        {activeSubs.map((sb, k) => (
+                          <li key={`${sb.title}-${k}`} className="flex items-start gap-2 text-sm leading-snug text-neutral-700">
+                            <span
+                              aria-hidden="true"
+                              className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: activeIsSide ? SIDE : '#2f80e0' }}
+                            />
+                            <span className="min-w-0 flex-1 break-words">{sb.title}</span>
+                            {sb.hours > 0 && (
+                              <span className="shrink-0 rounded-full bg-[#f3e6d3] px-2 py-0.5 text-[11px] font-bold text-neutral-700">
+                                {sb.hours} h
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      detail(activeStep) && (
+                        <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
+                      )
                     )}
 
                     {activeIsSide && (
