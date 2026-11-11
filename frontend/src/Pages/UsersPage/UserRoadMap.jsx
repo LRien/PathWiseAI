@@ -33,13 +33,16 @@ import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoad
 /* celebration) and the cheering character wait until the loader has   */
 /* finished and is gone (see animReady).                               */
 /*                                                                     */
-/* v2 roadmaps: each step can carry `substeps`. The focus card shows   */
-/* them as a CHECKLIST: tick each task as you do it. Ticking the last  */
-/* task finishes the step (with the celebration), unticking one        */
-/* reopens it. Ticks are saved per prediction + career.                */
-/* If a step has no substeps, its own actions / tasks / items /        */
-/* checklist list is used as the checklist instead.                    */
-/* The header shows the hours per week and the total hours.            */
+/* v2 roadmaps: the focus card shows each step's tasks as a CHECKLIST. */
+/* Tick each task as you do it. Ticking the last task finishes the     */
+/* step (with the celebration), unticking one reopens it. Ticks are    */
+/* saved per prediction + career.                                      */
+/* Every task shows: title, timing, hours, why, and numbered actions.  */
+/* (No "proof" and no "free resources" lines.) Two plan-wide notes     */
+/* ("Skills you can already claim" and "How to run this plan with      */
+/* your style") are hidden, see HIDDEN_TASKS below.                    */
+/* If a step has no tasks, its own actions / tasks / items / checklist */
+/* list is used instead. The header shows hours per week + total hours.*/
 /* ------------------------------------------------------------------ */
 
 const BACK = '/dashboard'
@@ -74,29 +77,35 @@ const detail = (x) => {
   return typeof d === 'string' && d !== text(x) ? d : ''
 }
 
-/* v2 steps: the small tasks inside a step (the checklist), each with the hours it takes.
-   If the step has no `substeps`, its own actions / tasks / items / checklist list is used instead. */
-const mapSub = (sb) =>
-  typeof sb === 'string'
-    ? { title: sb.trim(), timeframe: '', hours: 0, why: '', actions: [], proof: '', resources: [], tag: '' }
-    : {
-        title: String(text(sb) || '').trim(),
-        timeframe: String(sb?.timeframe ?? ''),
-        hours: Number(sb?.hours) || 0,
-        why: String(sb?.why ?? ''),
-        actions: list(sb?.actions).map(text).filter(Boolean),
-        proof: String(sb?.proof ?? ''),
-        resources: list(sb?.resources)
-          .map((r) => (typeof r === 'string' ? { name: r, url: '' } : { name: String(r?.name ?? ''), url: String(r?.url ?? '') }))
-          .filter((r) => r.name),
-        tag: String(sb?.tag ?? ''),
-      }
+/* Tasks that are NOT shown in the checklist (plan-wide notes, not things you tick off).
+   Add another pattern here to hide more. */
+const HIDDEN_TASKS = [/^\s*skills you can already claim/i, /^\s*how to run this plan/i]
 
+/* "Why: ..." lines inside the actions are shown as a short note, not as a numbered action */
+const WHY_RE = /^\s*why\s*:\s*/i
+
+/* the tasks inside a step (the checklist), each with the hours it takes */
+const mapSub = (sb) => {
+  if (typeof sb === 'string') return { title: sb.trim(), timeframe: '', hours: 0, why: '', actions: [], tag: '' }
+  const raw = list(sb?.actions).map(text).filter(Boolean)
+  const whyAction = raw.find((a) => WHY_RE.test(a))
+  return {
+    title: String(text(sb) || '').trim(),
+    timeframe: String(sb?.timeframe ?? ''),
+    hours: Number(sb?.hours) || 0,
+    why: String(sb?.why ?? '').trim() || (whyAction ? whyAction.replace(WHY_RE, '').trim() : ''),
+    actions: raw.filter((a) => !WHY_RE.test(a)),
+    tag: String(sb?.tag ?? ''),
+  }
+}
+
+/* If the step has no `substeps`, its own actions / tasks / items / checklist list is used instead. */
 const substepsOf = (x) => {
-  const own = list(x?.substeps).map(mapSub).filter((sb) => sb.title)
+  const keep = (sb) => sb.title && !HIDDEN_TASKS.some((re) => re.test(sb.title))
+  const own = list(x?.substeps).map(mapSub).filter(keep)
   if (own.length) return own
   const loose = x?.actions ?? x?.tasks ?? x?.items ?? x?.checklist
-  return list(loose).map(mapSub).filter((sb) => sb.title)
+  return list(loose).map(mapSub).filter(keep)
 }
 
 /* Title Case: capitalise the first letter of every word ("build core skills" -> "Build Core Skills") */
@@ -1048,12 +1057,12 @@ const fit = (min) => ({ gridTemplateColumns: `repeat(auto-fit, minmax(min(${min}
 const TickBox = ({ checked, side }) => (
   <span
     aria-hidden="true"
-    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 transition-all duration-200 ${
       checked
         ? side
-          ? 'border-[#8b5cf6] bg-[#8b5cf6] text-white'
-          : 'border-[#2f9e62] bg-[#2f9e62] text-white'
-        : 'border-[#d9c8ae] bg-white text-transparent'
+          ? 'scale-100 border-[#8b5cf6] bg-[#8b5cf6] text-white'
+          : 'scale-100 border-[#2f9e62] bg-[#2f9e62] text-white'
+        : 'border-[#d9c8ae] bg-white text-transparent group-hover/task:border-[#0b0b2b]'
     }`}
   >
     <FaCheck className="h-3 w-3" />
@@ -1920,13 +1929,15 @@ const UserRoadMap = () => {
   const activeWhere = plan.where[active]
   const activeIsSide = activeWhere?.kind === 'side'
 
-  /* the checklist: the small tasks inside the step in focus, and the hours they add up to */
+  /* the checklist: the tasks inside the step in focus, and the hours they add up to */
   const activeSubs = substepsOf(activeStep)
   const activeHours = activeSubs.reduce((sum, sb) => sum + sb.hours, 0)
   const subTaskKey = (k) => `${activeKey}:${k}`
   /* a finished step shows every task as ticked, even if it was finished with the "Mark as done" button */
   const isSubChecked = (k) => activeDone || subDone.includes(subTaskKey(k))
   const subCheckedCount = activeSubs.filter((_, k) => isSubChecked(k)).length
+  const subPct = activeSubs.length ? Math.round((subCheckedCount / activeSubs.length) * 100) : 0
+  const accent = activeIsSide ? SIDE : '#2f9e62'
 
   /* v2: hours per week and total hours for the whole roadmap (shown in the header) */
   const hoursPerWeek = Number(roadmap.timeline?.hoursPerWeek) || 0
@@ -2612,11 +2623,6 @@ const UserRoadMap = () => {
                       {activeHours > 0 && (
                         <span className="rounded-full bg-[#fff3cf] px-3 py-1 text-xs font-bold text-[#7a5a08]">{activeHours} h</span>
                       )}
-                      {activeSubs.length > 0 && (
-                        <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
-                          {subCheckedCount} / {activeSubs.length} tasks
-                        </span>
-                      )}
                       {plan.all[active]?.phase && (
                         <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
                       )}
@@ -2640,36 +2646,38 @@ const UserRoadMap = () => {
                     {activeSubs.length > 0 ? (
                       <>
                         {text(activeStep?.note) && (
-                          <div className="mt-2 text-xs font-semibold text-neutral-500">{text(activeStep.note)}</div>
+                          <div className="mt-2 text-xs font-semibold leading-snug text-neutral-500">{text(activeStep.note)}</div>
                         )}
-                        <ul className="mt-3 space-y-3" aria-label="Tasks in this step">
+                        <ul className="mt-4 space-y-3" aria-label="Tasks in this step">
                           {activeSubs.map((sb, k) => {
                             const ticked = isSubChecked(k)
                             return (
-                              <li
-                                key={`${sb.title}-${k}`}
-                                className={`rounded-xl p-3 text-sm transition-colors ${
-                                  ticked ? 'bg-[#f1f8f4] text-neutral-500' : 'bg-[#faf6ee] text-neutral-700'
-                                }`}
-                              >
-                                <div className="flex items-start gap-3">
+                              <li key={`${sb.title}-${k}`}>
+                                <div
+                                  className={`group/task flex items-start gap-3 rounded-2xl border p-4 transition-colors ${
+                                    ticked
+                                      ? 'border-[#cfe8d9] bg-[#f3faf6]'
+                                      : 'border-[#eadfce] bg-[#fdfaf4] hover:border-[#d9c8ae]'
+                                  }`}
+                                  style={ticked && activeIsSide ? { borderColor: '#ddd0fb', backgroundColor: '#f8f4ff' } : undefined}
+                                >
                                   <button
                                     type="button"
                                     role="checkbox"
                                     aria-checked={ticked}
                                     aria-label={`${ticked ? 'Untick' : 'Tick'} task: ${sb.title}`}
                                     onClick={() => toggleSub(k)}
-                                    className="rounded-md focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80e0]/40"
+                                    className="mt-0.5 rounded-lg focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80e0]/40"
                                   >
                                     <TickBox checked={ticked} side={activeIsSide} />
                                   </button>
 
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                                       <span
                                         onClick={() => toggleSub(k)}
-                                        className={`cursor-pointer break-words font-extrabold ${
-                                          ticked ? 'text-neutral-400 line-through' : 'text-black'
+                                        className={`cursor-pointer break-words text-[15px] font-extrabold leading-snug ${
+                                          ticked ? 'text-neutral-400 line-through decoration-2' : 'text-black'
                                         }`}
                                       >
                                         {sb.title}
@@ -2691,46 +2699,29 @@ const UserRoadMap = () => {
                                       )}
                                     </div>
 
-                                    {sb.why && <div className="mt-1 text-xs leading-snug text-neutral-500">{sb.why}</div>}
+                                    {sb.why && (
+                                      <div className="mt-1.5 text-[13px] italic leading-snug text-neutral-500">{sb.why}</div>
+                                    )}
 
                                     {sb.actions.length > 0 && (
-                                      <ol className="mt-2 list-decimal space-y-1 pl-5 leading-snug marker:font-bold marker:text-neutral-400">
+                                      <ol className="mt-3 space-y-2">
                                         {sb.actions.map((a, ai) => (
-                                          <li key={`${a}-${ai}`} className="break-words">
-                                            {a}
+                                          <li key={`${a}-${ai}`} className="flex items-start gap-2.5 text-sm leading-snug text-neutral-700">
+                                            <span
+                                              aria-hidden="true"
+                                              className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold"
+                                              style={
+                                                ticked
+                                                  ? { backgroundColor: accent, color: '#fff' }
+                                                  : { backgroundColor: '#efe4d0', color: '#6b5b3e' }
+                                              }
+                                            >
+                                              {ai + 1}
+                                            </span>
+                                            <span className={`min-w-0 break-words ${ticked ? 'text-neutral-400' : ''}`}>{a}</span>
                                           </li>
                                         ))}
                                       </ol>
-                                    )}
-
-                                    {sb.proof && (
-                                      <div className="mt-2 text-xs leading-snug">
-                                        <span className="font-bold text-[#2f9e62]">Proof you did it: </span>
-                                        {sb.proof}
-                                      </div>
-                                    )}
-
-                                    {sb.resources.length > 0 && (
-                                      <div className="mt-1 text-xs leading-snug text-neutral-600">
-                                        <span className="font-bold">Free resources: </span>
-                                        {sb.resources.map((r, ri) => (
-                                          <React.Fragment key={`${r.name}-${ri}`}>
-                                            {ri > 0 && ', '}
-                                            {r.url ? (
-                                              <a
-                                                href={r.url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="underline decoration-dotted underline-offset-2 hover:text-[#0b0b2b]"
-                                              >
-                                                {r.name}
-                                              </a>
-                                            ) : (
-                                              r.name
-                                            )}
-                                          </React.Fragment>
-                                        ))}
-                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -2746,45 +2737,75 @@ const UserRoadMap = () => {
                     )}
 
                     {activeIsSide && (
-                      <div className="mt-2 text-sm font-bold" style={{ color: SIDE }}>
+                      <div className="mt-3 text-sm font-bold" style={{ color: SIDE }}>
                         Extra credit. It won’t count toward your progress.
                       </div>
                     )}
                   </div>
 
-                  <div className="mt-4 min-w-0 lg:mt-0 lg:flex lg:items-center lg:border-l lg:border-[#e6d8c3] lg:pl-6">
-                    <div className="flex w-full items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={finishActive}
-                        className={`h-10 rounded-full px-5 text-xs font-extrabold uppercase tracking-wide transition ${
-                          activeDone
-                            ? 'border border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
-                            : 'bg-[#0b0b2b] text-white hover:bg-[#1a1a4a]'
-                        }`}
-                      >
-                        {activeDone ? 'Mark as not done' : 'Mark as done'}
-                      </button>
+                  {/* right side: task progress and the buttons. Stays in view while the task list scrolls. */}
+                  <div className="mt-4 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
+                    <div className="flex flex-col gap-4 lg:sticky lg:top-2 lg:justify-center lg:py-4">
+                      {activeSubs.length > 0 && (
+                        <div>
+                          <div className="flex items-baseline justify-between gap-2 text-sm">
+                            <span className="font-extrabold text-black">Your checklist</span>
+                            <span className="font-bold text-neutral-500">
+                              {subCheckedCount} / {activeSubs.length} tasks
+                            </span>
+                          </div>
+                          <div
+                            className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e8dcc8]"
+                            role="progressbar"
+                            aria-valuenow={subPct}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label="Tasks done in this step"
+                          >
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${subPct}%`, backgroundColor: accent }}
+                            />
+                          </div>
+                          <div className="mt-2 text-xs leading-snug text-neutral-500">
+                            Tick each task as you finish it. The step completes when every task is ticked.
+                          </div>
+                        </div>
+                      )}
 
-                      <div className="ml-auto flex shrink-0 gap-2">
+                      <div className="flex w-full items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => goTo(active - 1)}
-                          disabled={active === 0}
-                          aria-label="Previous step"
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                          onClick={finishActive}
+                          className={`h-10 rounded-full px-5 text-xs font-extrabold uppercase tracking-wide transition ${
+                            activeDone
+                              ? 'border border-[#d9c8ae] bg-white text-neutral-700 hover:border-[#0b0b2b]'
+                              : 'bg-[#0b0b2b] text-white hover:bg-[#1a1a4a]'
+                          }`}
                         >
-                          ←
+                          {activeDone ? 'Mark as not done' : 'Mark as done'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => goTo(active + 1)}
-                          disabled={active === total - 1}
-                          aria-label="Next step"
-                          className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
-                        >
-                          →
-                        </button>
+
+                        <div className="ml-auto flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => goTo(active - 1)}
+                            disabled={active === 0}
+                            aria-label="Previous step"
+                            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                          >
+                            ←
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => goTo(active + 1)}
+                            disabled={active === total - 1}
+                            aria-label="Next step"
+                            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#d9c8ae] bg-white text-sm font-bold text-neutral-700 transition hover:border-[#0b0b2b] disabled:opacity-40"
+                          >
+                            →
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
