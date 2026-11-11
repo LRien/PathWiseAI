@@ -9,6 +9,8 @@ import { supabase } from '../config/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
 import { redoPrediction, PredictionError, MAX_REDOS } from '../services/predictionService.js'
 
+console.log('[predictions] routes loaded: roadmap-fallback v2')
+
 const router = Router()
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
