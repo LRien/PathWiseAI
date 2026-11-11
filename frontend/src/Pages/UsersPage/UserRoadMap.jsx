@@ -2560,9 +2560,9 @@ const UserRoadMap = () => {
           </Box>
 
           {/* Map + focus card.
-              Mobile: portrait island, the focus card floats at the bottom of the screen while the map scrolls.
-              Desktop: landscape island (scrolls sideways when long), focus card underneath.
-              The cheering character rides above the focus card on both. On phones the aside has top padding
+              The focus card is a normal section right below the map (it does not stick to the screen).
+              Mobile: portrait island. Desktop: landscape island (scrolls sideways when long).
+              The cheering character rides above the focus card on both. The aside has top padding
               so the character sits in its own gap instead of covering the map. */}
           <div className="space-y-4">
             {land ? (
@@ -2574,8 +2574,8 @@ const UserRoadMap = () => {
             )}
 
             {/* FOCUS CARD + CHEER CHARACTER */}
-            <aside className="pointer-events-none sticky bottom-3 z-30 min-w-0 pt-24 lg:pt-0">
-              <div className="pointer-events-auto relative">
+            <aside className="relative z-10 min-w-0 pt-24 lg:pt-28">
+              <div className="relative">
                 {/* mounted only once the loader is gone, so its greeting bubble and timers start when the person can actually see them */}
                 {theme && !showLoader && (
                   <MiniCheer
@@ -2591,7 +2591,7 @@ const UserRoadMap = () => {
                 )}
 
                 <div
-                  className="max-h-[46vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:max-h-[50vh] sm:p-5 lg:grid lg:max-h-[62vh] lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
+                  className="rounded-2xl border-2 bg-white p-4 shadow-lg sm:p-5 lg:grid lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
                   style={{ borderColor: activeIsSide ? SIDE : '#0b0b2b' }}
                   aria-live="polite"
                 >
@@ -2743,9 +2743,9 @@ const UserRoadMap = () => {
                     )}
                   </div>
 
-                  {/* right side: task progress and the buttons. Stays in view while the task list scrolls. */}
+                  {/* right side: task progress and the buttons */}
                   <div className="mt-4 min-w-0 lg:mt-0 lg:border-l lg:border-[#e6d8c3] lg:pl-6">
-                    <div className="flex flex-col gap-4 lg:sticky lg:top-2 lg:justify-center lg:py-4">
+                    <div className="flex flex-col gap-4 lg:justify-start lg:py-1">
                       {activeSubs.length > 0 && (
                         <div>
                           <div className="flex items-baseline justify-between gap-2 text-sm">
