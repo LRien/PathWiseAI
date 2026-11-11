@@ -23,17 +23,54 @@ const ROADMAP_COLUMNS =
 const stepLabel = (x) =>
   typeof x === 'string' ? x : x?.title ?? x?.name ?? x?.text ?? x?.step ?? x?.label ?? x?.description ?? ''
 
-// v2 roadmap steps -> the step shape the roadmap page already reads
-// ({ title, timeframe, details }), plus the raw substeps and hours for later use.
+// first non-empty string among the given values
+const firstStr = (...vals) => {
+  for (const v of vals) if (typeof v === 'string' && v.trim()) return v.trim()
+  return ''
+}
+
+// a list of strings (items can be plain strings or objects with a text-like field)
+const strList = (v) => (Array.isArray(v) ? v : []).map((x) => String(stepLabel(x)).trim()).filter(Boolean)
+
+// resources: strings, or { name/title, url/link }
+const resourceList = (v) =>
+  (Array.isArray(v) ? v : [])
+    .map((x) =>
+      typeof x === 'string'
+        ? { name: x.trim(), url: '' }
+        : { name: firstStr(x?.name, x?.title, x?.label, x?.text), url: firstStr(x?.url, x?.link, x?.href) }
+    )
+    .filter((x) => x.name)
+
+// one substep of a v2 step: title, timing, hours, why, numbered actions, proof, free resources.
+// Several field names are accepted because the Space's JSON may call them slightly differently.
+function v2Substep(sb) {
+  if (typeof sb === 'string') {
+    return { title: sb.trim(), timeframe: '', hours: 0, why: '', actions: [], proof: '', resources: [], tag: '' }
+  }
+  return {
+    title: firstStr(sb?.title, sb?.name, sb?.label, sb?.skill, sb?.text),
+    timeframe: firstStr(sb?.timeframe, sb?.when, sb?.weeks, sb?.duration, sb?.period, sb?.time),
+    hours: Number(sb?.hours ?? sb?.h) || 0,
+    why: firstStr(sb?.why, sb?.reason, sb?.rationale),
+    actions: strList(sb?.actions ?? sb?.tasks ?? sb?.steps ?? sb?.items ?? sb?.bullets),
+    proof: firstStr(sb?.proof, sb?.deliverable, sb?.proof_of_work, sb?.output),
+    resources: resourceList(sb?.resources ?? sb?.free_resources ?? sb?.links),
+    tag: firstStr(sb?.tag, sb?.badge, sb?.label_tag),
+  }
+}
+
+// v2 roadmap steps -> the step shape the roadmap page reads
+// ({ title, timeframe, note, substeps[] }), plus a plain-text `details` fallback.
 function v2Steps(plan) {
   const steps = Array.isArray(plan?.steps) ? plan.steps : []
   return steps.map((st) => {
-    const substeps = (Array.isArray(st?.substeps) ? st.substeps : [])
-      .map((sb) => ({ title: String(stepLabel(sb)).trim(), hours: Number(sb?.hours) || 0 }))
-      .filter((sb) => sb.title)
+    const substeps = (Array.isArray(st?.substeps) ? st.substeps : []).map(v2Substep).filter((sb) => sb.title)
     return {
       title: st?.title ?? '',
       timeframe: st?.timeframe ?? null,
+      note: firstStr(st?.note, st?.summary_note),
+      tag: firstStr(st?.tag, st?.badge),
       details: substeps.map((sb) => (sb.hours ? `${sb.title} (${sb.hours} h)` : sb.title)).join(' • '),
       hours: substeps.reduce((a, sb) => a + sb.hours, 0),
       substeps,

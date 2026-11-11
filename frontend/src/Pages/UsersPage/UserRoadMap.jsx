@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { animate, stagger } from 'animejs'
-import { FaCheckCircle, FaFlagCheckered, FaPlay, FaStar, FaYoutube } from 'react-icons/fa'
+import { FaCheck, FaCheckCircle, FaFlagCheckered, FaPlay, FaStar, FaYoutube } from 'react-icons/fa'
 import { SiCoursera, SiUdemy } from 'react-icons/si'
 import { getLatestPrediction, getPrediction, getRoadmap, listPredictions } from '../../api/predictions'
 import MbtiCharacter, { mbtiTheme } from './UsersComponents/MbtiCharacter'
@@ -33,9 +33,13 @@ import PageLoader, { cacheMbti, getCachedMbti } from './UsersComponents/PageLoad
 /* celebration) and the cheering character wait until the loader has   */
 /* finished and is gone (see animReady).                               */
 /*                                                                     */
-/* v2 roadmaps: each step can carry `substeps` ([{ title, hours }]).   */
-/* The focus card lists them with their hours, and the header shows    */
-/* the hours per week and the total hours of the whole roadmap.        */
+/* v2 roadmaps: each step can carry `substeps`. The focus card shows   */
+/* them as a CHECKLIST: tick each task as you do it. Ticking the last  */
+/* task finishes the step (with the celebration), unticking one        */
+/* reopens it. Ticks are saved per prediction + career.                */
+/* If a step has no substeps, its own actions / tasks / items /        */
+/* checklist list is used as the checklist instead.                    */
+/* The header shows the hours per week and the total hours.            */
 /* ------------------------------------------------------------------ */
 
 const BACK = '/dashboard'
@@ -70,11 +74,30 @@ const detail = (x) => {
   return typeof d === 'string' && d !== text(x) ? d : ''
 }
 
-/* v2 steps: the small tasks inside a step, each with the hours it takes */
-const substepsOf = (x) =>
-  list(x?.substeps)
-    .map((sb) => ({ title: String(text(sb) || '').trim(), hours: Number(sb?.hours) || 0 }))
-    .filter((sb) => sb.title)
+/* v2 steps: the small tasks inside a step (the checklist), each with the hours it takes.
+   If the step has no `substeps`, its own actions / tasks / items / checklist list is used instead. */
+const mapSub = (sb) =>
+  typeof sb === 'string'
+    ? { title: sb.trim(), timeframe: '', hours: 0, why: '', actions: [], proof: '', resources: [], tag: '' }
+    : {
+        title: String(text(sb) || '').trim(),
+        timeframe: String(sb?.timeframe ?? ''),
+        hours: Number(sb?.hours) || 0,
+        why: String(sb?.why ?? ''),
+        actions: list(sb?.actions).map(text).filter(Boolean),
+        proof: String(sb?.proof ?? ''),
+        resources: list(sb?.resources)
+          .map((r) => (typeof r === 'string' ? { name: r, url: '' } : { name: String(r?.name ?? ''), url: String(r?.url ?? '') }))
+          .filter((r) => r.name),
+        tag: String(sb?.tag ?? ''),
+      }
+
+const substepsOf = (x) => {
+  const own = list(x?.substeps).map(mapSub).filter((sb) => sb.title)
+  if (own.length) return own
+  const loose = x?.actions ?? x?.tasks ?? x?.items ?? x?.checklist
+  return list(loose).map(mapSub).filter((sb) => sb.title)
+}
 
 /* Title Case: capitalise the first letter of every word ("build core skills" -> "Build Core Skills") */
 const tc = (s) => String(s ?? '').replace(/(^|[\s(/\-–])([a-z])/g, (_, a, b) => a + b.toUpperCase())
@@ -1021,6 +1044,22 @@ const SkillRow = ({ skill }) => (
 /* tiles share the row evenly: as many columns as fit, and they stretch to fill the width */
 const fit = (min) => ({ gridTemplateColumns: `repeat(auto-fit, minmax(min(${min}px, 100%), 1fr))` })
 
+/* the square tick box used by the task checklist in the focus card */
+const TickBox = ({ checked, side }) => (
+  <span
+    aria-hidden="true"
+    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+      checked
+        ? side
+          ? 'border-[#8b5cf6] bg-[#8b5cf6] text-white'
+          : 'border-[#2f9e62] bg-[#2f9e62] text-white'
+        : 'border-[#d9c8ae] bg-white text-transparent'
+    }`}
+  >
+    <FaCheck className="h-3 w-3" />
+  </span>
+)
+
 /* ------------------------------------------------------------------ */
 /* Cheer: your character greets you, then keeps cheering you on        */
 /* ------------------------------------------------------------------ */
@@ -1174,7 +1213,8 @@ const UserRoadMap = () => {
   const [message, setMessage] = useState('')
   const [pred, setPred] = useState(null)
   const [road, setRoad] = useState(null)
-  const [done, setDone] = useState([])
+  const [done, setDone] = useState([]) // finished steps (keys = step index in the original list)
+  const [subDone, setSubDone] = useState([]) // ticked checklist tasks (keys = "stepKey:taskIndex")
   const [focusIdx, setFocusIdx] = useState(null) // null = follow the next unfinished main step
   const [celebrate, setCelebrate] = useState(0) // goes up each time a step is finished, the cheering character reacts
   /* the intro preview: the character walks the whole main route once, then returns to your step */
@@ -1255,6 +1295,8 @@ const UserRoadMap = () => {
   /* checklist progress, remembered per prediction + career.
      Keys are the step's index in the original list, so saved progress keeps working. */
   const storeKey = pred && road ? `roadmapProgress:${pred.id}:${road.career?.title}` : null
+  /* the ticked tasks inside the steps are remembered separately, under their own key */
+  const subKey = pred && road ? `roadmapTasks:${pred.id}:${road.career?.title}` : null
 
   useEffect(() => {
     if (!storeKey) return
@@ -1266,14 +1308,46 @@ const UserRoadMap = () => {
     }
   }, [storeKey])
 
+  useEffect(() => {
+    if (!subKey) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(subKey) || '[]')
+      setSubDone(Array.isArray(saved) ? saved : [])
+    } catch {
+      setSubDone([])
+    }
+  }, [subKey])
+
+  const saveDone = (next) => {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(next))
+    } catch {
+      /* storage unavailable: progress just won't persist */
+    }
+  }
+
+  const saveSubs = (next) => {
+    setSubDone(next)
+    try {
+      localStorage.setItem(subKey, JSON.stringify(next))
+    } catch {
+      /* storage unavailable: ticks just won't persist */
+    }
+  }
+
   const toggle = (key) =>
     setDone((prev) => {
       const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-      try {
-        localStorage.setItem(storeKey, JSON.stringify(next))
-      } catch {
-        /* storage unavailable: progress just won't persist */
-      }
+      saveDone(next)
+      return next
+    })
+
+  /* set a step to done / not done (does nothing if it already is) */
+  const setStepDone = (key, value) =>
+    setDone((prev) => {
+      if (prev.includes(key) === value) return prev
+      const next = value ? [...prev, key] : prev.filter((k) => k !== key)
+      saveDone(next)
       return next
     })
 
@@ -1846,9 +1920,13 @@ const UserRoadMap = () => {
   const activeWhere = plan.where[active]
   const activeIsSide = activeWhere?.kind === 'side'
 
-  /* v2: the small tasks inside the step in focus, and the hours they add up to */
+  /* the checklist: the small tasks inside the step in focus, and the hours they add up to */
   const activeSubs = substepsOf(activeStep)
   const activeHours = activeSubs.reduce((sum, sb) => sum + sb.hours, 0)
+  const subTaskKey = (k) => `${activeKey}:${k}`
+  /* a finished step shows every task as ticked, even if it was finished with the "Mark as done" button */
+  const isSubChecked = (k) => activeDone || subDone.includes(subTaskKey(k))
+  const subCheckedCount = activeSubs.filter((_, k) => isSubChecked(k)).length
 
   /* v2: hours per week and total hours for the whole roadmap (shown in the header) */
   const hoursPerWeek = Number(roadmap.timeline?.hoursPerWeek) || 0
@@ -1873,14 +1951,38 @@ const UserRoadMap = () => {
 
   const goTo = (i) => setFocusIdx(Math.max(0, Math.min(total - 1, i)))
 
+  /* a step was just finished (by ticking its last task or by the button) */
+  const stepFinished = () => {
+    celebrateStep(active) // confetti burst at the stop that was just finished
+    setFocusIdx(null) // jump on to the next unfinished main step
+    setCelebrate((n) => n + 1) // the cheering character celebrates
+  }
+
+  /* tick / untick one task of the step in focus.
+     Ticking the last task finishes the step, unticking a task of a finished step reopens it. */
+  const toggleSub = (k) => {
+    const mine = activeSubs.map((_, j) => subTaskKey(j))
+    const base = activeDone ? [...new Set([...subDone, ...mine])] : subDone // a finished step counts as all ticked
+    const key = subTaskKey(k)
+    const next = base.includes(key) ? base.filter((x) => x !== key) : [...base, key]
+    saveSubs(next)
+
+    const allTicked = mine.every((x) => next.includes(x))
+    if (allTicked && !activeDone) {
+      setStepDone(activeKey, true)
+      stepFinished()
+    } else if (!allTicked && activeDone) {
+      setStepDone(activeKey, false)
+    }
+  }
+
   const finishActive = () => {
     const wasDone = activeDone
+    const mine = activeSubs.map((_, j) => subTaskKey(j))
+    // marking the step done ticks all its tasks, marking it not done clears them
+    saveSubs(wasDone ? subDone.filter((x) => !mine.includes(x)) : [...new Set([...subDone, ...mine])])
     toggle(activeKey)
-    if (!wasDone) {
-      celebrateStep(active) // confetti burst at the stop that was just finished
-      setFocusIdx(null) // jump on to the next unfinished main step
-      setCelebrate((n) => n + 1) // the cheering character celebrates
-    }
+    if (!wasDone) stepFinished()
   }
 
   /* header total: "4-5 years (starting from zero)" -> "4–5 Years" (the header adds "About" and "From Scratch") */
@@ -2478,7 +2580,7 @@ const UserRoadMap = () => {
                 )}
 
                 <div
-                  className="max-h-[46vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:max-h-[50vh] sm:p-5 lg:grid lg:max-h-none lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
+                  className="max-h-[46vh] overflow-y-auto rounded-2xl border-2 bg-white p-4 shadow-lg sm:max-h-[50vh] sm:p-5 lg:grid lg:max-h-[62vh] lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-6"
                   style={{ borderColor: activeIsSide ? SIDE : '#0b0b2b' }}
                   aria-live="polite"
                 >
@@ -2510,6 +2612,11 @@ const UserRoadMap = () => {
                       {activeHours > 0 && (
                         <span className="rounded-full bg-[#fff3cf] px-3 py-1 text-xs font-bold text-[#7a5a08]">{activeHours} h</span>
                       )}
+                      {activeSubs.length > 0 && (
+                        <span className="rounded-full bg-[#eaf6ef] px-3 py-1 text-xs font-bold text-[#2f9e62]">
+                          {subCheckedCount} / {activeSubs.length} tasks
+                        </span>
+                      )}
                       {plan.all[active]?.phase && (
                         <span className="rounded-full bg-[#e8f1fc] px-3 py-1 text-xs font-bold text-[#2f80e0]">{plan.all[active].phase}</span>
                       )}
@@ -2528,25 +2635,110 @@ const UserRoadMap = () => {
                       {title(activeStep)}
                     </div>
 
-                    {/* v2 steps list their small tasks with hours; older roadmaps keep the plain description */}
+                    {/* the checklist: tick each task as you do it. Ticking the last one finishes the step.
+                        Older roadmaps without tasks keep the plain description. */}
                     {activeSubs.length > 0 ? (
-                      <ul className="mt-3 space-y-1.5">
-                        {activeSubs.map((sb, k) => (
-                          <li key={`${sb.title}-${k}`} className="flex items-start gap-2 text-sm leading-snug text-neutral-700">
-                            <span
-                              aria-hidden="true"
-                              className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: activeIsSide ? SIDE : '#2f80e0' }}
-                            />
-                            <span className="min-w-0 flex-1 break-words">{sb.title}</span>
-                            {sb.hours > 0 && (
-                              <span className="shrink-0 rounded-full bg-[#f3e6d3] px-2 py-0.5 text-[11px] font-bold text-neutral-700">
-                                {sb.hours} h
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+                      <>
+                        {text(activeStep?.note) && (
+                          <div className="mt-2 text-xs font-semibold text-neutral-500">{text(activeStep.note)}</div>
+                        )}
+                        <ul className="mt-3 space-y-3" aria-label="Tasks in this step">
+                          {activeSubs.map((sb, k) => {
+                            const ticked = isSubChecked(k)
+                            return (
+                              <li
+                                key={`${sb.title}-${k}`}
+                                className={`rounded-xl p-3 text-sm transition-colors ${
+                                  ticked ? 'bg-[#f1f8f4] text-neutral-500' : 'bg-[#faf6ee] text-neutral-700'
+                                }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <button
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={ticked}
+                                    aria-label={`${ticked ? 'Untick' : 'Tick'} task: ${sb.title}`}
+                                    onClick={() => toggleSub(k)}
+                                    className="rounded-md focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80e0]/40"
+                                  >
+                                    <TickBox checked={ticked} side={activeIsSide} />
+                                  </button>
+
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span
+                                        onClick={() => toggleSub(k)}
+                                        className={`cursor-pointer break-words font-extrabold ${
+                                          ticked ? 'text-neutral-400 line-through' : 'text-black'
+                                        }`}
+                                      >
+                                        {sb.title}
+                                      </span>
+                                      {sb.tag && (
+                                        <span className="rounded-full bg-[#0b0b2b] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                                          {sb.tag}
+                                        </span>
+                                      )}
+                                      {sb.timeframe && (
+                                        <span className="rounded-full bg-[#f3e6d3] px-2 py-0.5 text-[11px] font-bold text-neutral-700">
+                                          {sb.timeframe}
+                                        </span>
+                                      )}
+                                      {sb.hours > 0 && (
+                                        <span className="rounded-full bg-[#fff3cf] px-2 py-0.5 text-[11px] font-bold text-[#7a5a08]">
+                                          ~{sb.hours} h
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {sb.why && <div className="mt-1 text-xs leading-snug text-neutral-500">{sb.why}</div>}
+
+                                    {sb.actions.length > 0 && (
+                                      <ol className="mt-2 list-decimal space-y-1 pl-5 leading-snug marker:font-bold marker:text-neutral-400">
+                                        {sb.actions.map((a, ai) => (
+                                          <li key={`${a}-${ai}`} className="break-words">
+                                            {a}
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    )}
+
+                                    {sb.proof && (
+                                      <div className="mt-2 text-xs leading-snug">
+                                        <span className="font-bold text-[#2f9e62]">Proof you did it: </span>
+                                        {sb.proof}
+                                      </div>
+                                    )}
+
+                                    {sb.resources.length > 0 && (
+                                      <div className="mt-1 text-xs leading-snug text-neutral-600">
+                                        <span className="font-bold">Free resources: </span>
+                                        {sb.resources.map((r, ri) => (
+                                          <React.Fragment key={`${r.name}-${ri}`}>
+                                            {ri > 0 && ', '}
+                                            {r.url ? (
+                                              <a
+                                                href={r.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="underline decoration-dotted underline-offset-2 hover:text-[#0b0b2b]"
+                                              >
+                                                {r.name}
+                                              </a>
+                                            ) : (
+                                              r.name
+                                            )}
+                                          </React.Fragment>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </>
                     ) : (
                       detail(activeStep) && (
                         <div className="mt-2 text-sm leading-relaxed text-neutral-600">{detail(activeStep)}</div>
