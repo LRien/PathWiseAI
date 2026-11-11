@@ -15,7 +15,15 @@ function getClient() {
   return clientPromise
 }
 
-export async function getRecommendation({ mbti, skills, education, preference = '', includeRoadmap = false }) {
+export async function getRecommendation({
+  mbti,
+  skills,
+  education,
+  preference = '',
+  includeRoadmap = false,
+  hours = 8,
+  exclude = [], // O*NET codes already shown -> "show me different careers"
+}) {
   const client = await getClient()
   const result = await client.predict('/recommend', {
     mbti,
@@ -23,6 +31,8 @@ export async function getRecommendation({ mbti, skills, education, preference = 
     education,
     preference,
     include_roadmap: includeRoadmap,
+    hours,
+    exclude: (exclude ?? []).filter(Boolean).join(','),
   })
   return result.data[0]
 }

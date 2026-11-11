@@ -19,7 +19,8 @@ const CHARACTER_CSS = `
 const RANK_COLORS = ['#2f80e0', '#f2c230', '#e0404a']
 const RANK_TEXT = ['#fff', '#0b0b2b', '#fff']
 const RANK_LABEL = ['Best match', 'Second match', 'Third match']
-/* podium: #1 in the middle, #2 on the left, #3 on the right (DOM stays in rank order for keyboard users) */
+/* podium (3 careers): #1 in the middle, #2 on the left, #3 on the right (DOM stays in rank order for keyboard users).
+   With 1 or 2 careers the columns simply stay in rank order. */
 const RANK_ORDER = ['order-2', 'order-1', 'order-3']
 /* bar heights in px, tallest for the best match, like the loading animation's staircase */
 const BAR_H = [150, 120, 96]
@@ -27,6 +28,7 @@ const BAR_H = [150, 120, 96]
 const CONFETTI_COLORS = ['#2f80e0', '#f2c230', '#e0404a', '#e8832a', '#6b7a99']
 const CONFETTI_COUNT = 30
 const LETTER_POOL = 'ISTJENFP'
+const DEFAULT_MAX_REDOS = 5
 
 const reducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -107,20 +109,32 @@ const SkillBlock = ({ label, items, tone }) => {
 
 /*
   Props
-  - pred:  the saved prediction from the API ({ id, recommended: [...], createdAt })
+  - pred:  the saved prediction from the API ({ id, recommended: [...], createdAt, redoCount, maxRedos })
   - input: what the user submitted ({ mbti, degree, skills })
-  - busy / error: state while saving the chosen career
+  - busy / error: state while saving the chosen career (error also shows redo errors)
+  - onRedo / redoing: "No, show me different careers". The parent swaps `pred` and changes this
+    component's `key`, so the opening animation replays with the new careers.
   - onClose, onViewRoadmap(title), onViewDashboard
 
   Layout: the top 3 matches stand on a podium (#1 in the middle, tallest), the chosen career's
-  details sit on a card underneath.
+  details sit on a card underneath, then the "Are you satisfied?" row.
 
   Opening sequence (anime.js), roughly in this order:
   modal scales in -> left panel wipes open -> ring draws, type letters roll -> podium bars grow from #3 to #1
   -> confetti bursts above #1 -> the detail card builds itself (checks draw, chips pop in).
   Tapping another career replays the detail build and regrows that bar.
 */
-const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onViewRoadmap, onViewDashboard }) => {
+const PredictionModal = ({
+  pred,
+  input,
+  busy = false,
+  error = '',
+  onRedo,
+  redoing = false,
+  onClose,
+  onViewRoadmap,
+  onViewDashboard,
+}) => {
   const careers = list(pred?.recommended).slice(0, 3)
   const skills = list(input?.skills)
   const theme = input?.mbti ? mbtiTheme(input.mbti) : null
@@ -131,6 +145,21 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
   const index = Math.max(0, careers.findIndex((c) => c.title === selected))
   const current = careers[index] ?? null
   const parts = current ? careerParts(current) : { why: [], have: [], need: [] }
+
+  /* "Are you satisfied?": yes collapses the row into a confirmation; no asks the parent for different careers */
+  const [happy, setHappy] = useState(false)
+  const locked = busy || redoing
+  const maxRedos = Number(pred?.maxRedos) || DEFAULT_MAX_REDOS
+  const redosLeft = Math.max(0, maxRedos - (Number(pred?.redoCount) || 0))
+  const canRedo = typeof onRedo === 'function' && redosLeft > 0
+
+  /* podium shape: 3 careers use the podium order, 1 or 2 stay in rank order and centered */
+  const n3 = careers.length === 3
+  const gridCls = n3
+    ? 'grid-cols-3'
+    : careers.length === 2
+    ? 'mx-auto max-w-md grid-cols-2'
+    : 'mx-auto max-w-[180px] grid-cols-1'
 
   /* motion is decided once, so elements that animate in start hidden instead of flashing */
   const [motion] = useState(() => !reducedMotion())
@@ -145,7 +174,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
 
   /* close on Escape + lock page scroll while open */
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && !busy && onClose()
+    const onKey = (e) => e.key === 'Escape' && !locked && onClose()
     window.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -153,7 +182,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [onClose, busy])
+  }, [onClose, locked])
 
   /* ---- the opening sequence ---- */
   useLayoutEffect(() => {
@@ -252,7 +281,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
       )
     }
 
-    /* podium columns rise from #3 up to #1: bars grow, percentages count up */
+    /* podium columns rise from the last place up to #1: bars grow, percentages count up */
     const cols = q('.pw-row')
     const n = cols.length
     const BASE = 1000
@@ -383,7 +412,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
       aria-labelledby="prediction-title"
     >
       <style>{CHARACTER_CSS}</style>
-      <div className="pw-backdrop absolute inset-0 bg-[#0b0b2b]/60 backdrop-blur-sm" style={hid} onClick={busy ? undefined : onClose} />
+      <div className="pw-backdrop absolute inset-0 bg-[#0b0b2b]/60 backdrop-blur-sm" style={hid} onClick={locked ? undefined : onClose} />
 
       <div
         ref={panelRef}
@@ -394,7 +423,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
         <button
           type="button"
           onClick={onClose}
-          disabled={busy}
+          disabled={locked}
           aria-label="Close"
           className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-neutral-600 shadow-md transition hover:text-black disabled:opacity-50"
         >
@@ -463,7 +492,11 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
             className="pw-head mt-1.5 text-3xl font-black tracking-tight text-black sm:text-4xl"
             style={hid}
           >
-            Your top 3 career matches
+            {careers.length === 3
+              ? 'Your top 3 career matches'
+              : careers.length === 1
+              ? 'Your career match'
+              : `Your top ${careers.length || ''} career matches`}
           </h2>
           <p className="pw-head mt-1 text-sm text-neutral-600" style={hid}>
             Tap a career to see why it fits, then open its roadmap.
@@ -473,7 +506,7 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
             <>
               {/* the podium */}
               <div
-                className="relative mt-8 grid grid-cols-3 items-end gap-2.5 sm:gap-4"
+                className={`relative mt-8 grid items-end gap-2.5 sm:gap-4 ${gridCls}`}
                 role="radiogroup"
                 aria-label="Choose a career"
               >
@@ -487,11 +520,11 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
                       role="radio"
                       aria-checked={on}
                       aria-label={`${i + 1}. ${c.title}, ${pct(c)} percent match`}
-                      disabled={busy}
+                      disabled={locked}
                       data-pct={pct(c)}
                       style={hid}
                       onClick={() => setSelected(c.title)}
-                      className={`pw-row group relative flex min-w-0 flex-col text-center focus:outline-none ${RANK_ORDER[i]}`}
+                      className={`pw-row group relative flex min-w-0 flex-col text-center focus:outline-none ${n3 ? RANK_ORDER[i] : ''}`}
                     >
                       <span
                         className={`pw-pct text-2xl font-black leading-none sm:text-4xl ${on ? 'text-[#0b0b2b]' : 'text-neutral-500'}`}
@@ -621,6 +654,71 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
                       </p>
                     )}
                   </div>
+
+                  {/* Are you satisfied with these results? */}
+                  {(canRedo || happy || redoing) && (
+                    <div
+                      className="pw-rise mt-4 rounded-3xl border border-[#e0d1ba] bg-white/70 p-4 sm:p-5"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {redoing ? (
+                        <div className="flex items-center gap-3 text-sm font-bold text-[#0b0b2b]">
+                          <span
+                            className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-[#0b0b2b]/20 border-t-[#0b0b2b]"
+                            aria-hidden="true"
+                          />
+                          <span>
+                            Finding different careers...
+                            <span className="block text-xs font-normal text-neutral-500">
+                              This can take up to a minute. Please keep this page open.
+                            </span>
+                          </span>
+                        </div>
+                      ) : happy ? (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                          <span className="font-bold text-[#1d7a49]">✓ Glad it fits! Open a career&apos;s roadmap when you&apos;re ready.</span>
+                          {canRedo && (
+                            <button
+                              type="button"
+                              onClick={() => setHappy(false)}
+                              disabled={locked}
+                              className="text-xs font-semibold text-neutral-500 hover:text-black hover:underline disabled:opacity-50"
+                            >
+                              Actually, show me others
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-extrabold text-black">Are you satisfied with these results?</p>
+                            <p className="mt-0.5 text-xs text-neutral-500">
+                              Not quite right? We&apos;ll look for different careers ({redosLeft} {redosLeft === 1 ? 'try' : 'tries'} left).
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHappy(true)}
+                              disabled={locked}
+                              className="rounded-full bg-[#0b0b2b] px-4 py-2 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a] disabled:opacity-50"
+                            >
+                              Yes, I&apos;m satisfied
+                            </button>
+                            <button
+                              type="button"
+                              onClick={onRedo}
+                              disabled={locked}
+                              className="rounded-full border border-[#0b0b2b]/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide text-[#0b0b2b] transition hover:border-[#0b0b2b] disabled:opacity-50"
+                            >
+                              No, show me different careers
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -641,14 +739,14 @@ const PredictionModal = ({ pred, input, busy = false, error = '', onClose, onVie
             <button
               type="button"
               onClick={onViewDashboard}
-              disabled={busy}
+              disabled={locked}
               className="rounded-full bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-wide text-neutral-700 shadow-sm transition hover:text-black hover:shadow-md disabled:opacity-50"
             >
               Go to dashboard
             </button>
             <button
               type="button"
-              disabled={!current || busy}
+              disabled={!current || locked}
               onClick={() => onViewRoadmap(current.title)}
               className="max-w-full rounded-full bg-[#0b0b2b] px-6 py-3 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-[#1a1a4a] disabled:cursor-not-allowed disabled:opacity-40"
             >

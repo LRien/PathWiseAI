@@ -5,6 +5,7 @@ import { supabase } from '../config/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
 import { createPrediction, PredictionError } from '../services/predictionService.js'
 import { toEnglish } from '../services/translate.js'
+import { basicSkillError } from '../services/skillCheck.js'
 
 const router = Router()
 
@@ -17,20 +18,26 @@ const MBTI_TYPES = new Set([
   'ISTP', 'ISFP', 'ESTP', 'ESFP',
 ])
 
+// No product limit on skills; this is only a sanity cap against abuse
+const MAX_SKILLS_SANITY = 200
+
 // Accepts camelCase or snake_case, and skills as an array or a comma-separated string
 function validateInput(body = {}) {
   const mbti = String(body.mbti ?? '').trim().toUpperCase()
   if (!MBTI_TYPES.has(mbti)) return { error: 'A valid MBTI type is required (e.g. INTJ)' }
 
-  const degree = String(body.degreeProgram ?? body.degree_program ?? '').trim()
+  const degree = String(body.degreeProgram ?? body.degree_program ?? body.degree ?? '').trim()
   if (degree.length < 2 || degree.length > 150) return { error: 'Degree program is required' }
 
   const rawSkills = body.skills
   const list = Array.isArray(rawSkills) ? rawSkills : String(rawSkills ?? '').split(',')
   const skills = [...new Set(list.map((s) => String(s).trim()).filter(Boolean))]
   if (skills.length === 0) return { error: 'At least one skill is required' }
-  if (skills.length > 30 || skills.some((s) => s.length > 60)) {
-    return { error: 'Too many skills, or a skill name is too long' }
+  if (skills.length > MAX_SKILLS_SANITY) return { error: 'Too many skills' }
+
+  for (const s of skills) {
+    const problem = basicSkillError(s)
+    if (problem) return { error: `“${s}” can’t be used: ${problem.toLowerCase()}` }
   }
 
   const careerPreference = String(body.careerPreference ?? body.career_preference ?? '').trim()

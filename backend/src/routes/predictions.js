@@ -1,11 +1,13 @@
 // backend/src/routes/predictions.js
 //
 // Predictions are CREATED by POST /api/assessments (see assessments.js).
-// This file reads them, saves the user's "select this career" choice, and deletes them.
+// This file reads them, redoes them ("show me different careers"), saves the user's
+// "select this career" choice, and deletes them.
 
 import { Router } from 'express'
 import { supabase } from '../config/supabase.js'
 import { requireAuth } from '../middleware/auth.js'
+import { redoPrediction, PredictionError, MAX_REDOS } from '../services/predictionService.js'
 
 const router = Router()
 
@@ -14,11 +16,14 @@ const one = (v) => (Array.isArray(v) ? v[0] : v)
 
 // Columns of career_roadmaps -> the clean shape the frontend receives
 const ROADMAP_COLUMNS =
-  'job_title, soft_skills, other_skills, technical_skills, education_typical, education_reported, related_programs, certificates, time_estimate, time_steps, note'
+  'job_title, soft_skills, other_skills, technical_skills, education_typical, education_reported, related_programs, certificates, time_estimate, time_steps, note, roadmap, version'
 
+// version 1 = old rows (use the old columns). version 2 = full roadmap in `plan`
+// (plan.summary has the skills / education / certificates / skills-check block, plan.steps the step-by-step plan).
 const formatRoadmap = (r) =>
   r
     ? {
+        version: r.version ?? 1,
         jobTitle: r.job_title,
         skills: {
           soft: r.soft_skills ?? [],
@@ -36,6 +41,7 @@ const formatRoadmap = (r) =>
           steps: r.time_steps ?? [],
         },
         note: r.note,
+        plan: r.roadmap ?? null,
       }
     : null
 
@@ -101,12 +107,12 @@ function rewriteSkillReasons(reasons, have, need) {
 router.use(requireAuth)
 
 // Builds the "Your top 3 careers" response for one prediction id.
-// Shared by GET /latest and GET /:id so both return exactly the same shape.
+// Shared by GET /latest, GET /:id and POST /:id/redo so all return exactly the same shape.
 async function sendPrediction(req, res, id) {
   const { data: p, error } = await supabase
     .from('predictions')
     .select(
-      `id, selected_career, created_at,
+      `id, selected_career, created_at, redo_count,
        assessments(mbti, degree_program, skills, career_preference),
        prediction_results(personality, preference_note, disclaimer),
        recommended_careers(rank, code, title, match_percent, description, why, reasons, skills_have, skills_to_build, career_roadmaps(id, soft_skills, other_skills, technical_skills)),
@@ -139,6 +145,8 @@ async function sendPrediction(req, res, id) {
       number: count,
       createdAt: p.created_at,
       selectedCareer: p.selected_career,
+      redoCount: p.redo_count ?? 0,
+      maxRedos: MAX_REDOS,
       assessment: {
         mbti: a?.mbti ?? null,
         degreeProgram: a?.degree_program ?? null,
@@ -262,6 +270,30 @@ router.get('/:id', async (req, res) => {
   return sendPrediction(req, res, id)
 })
 
+// POST /api/predictions/:id/redo
+// "No, show me different careers": replaces the recommended careers and their roadmaps.
+// If the Space finds nothing new, the current results stay and the Space's message is returned (409).
+const redoing = new Set() // ignores double clicks while a redo is running
+
+router.post('/:id/redo', async (req, res) => {
+  const { id } = req.params
+  if (!UUID_RE.test(id)) return res.status(404).json({ message: 'Prediction not found' })
+  if (redoing.has(id)) return res.status(409).json({ message: 'Already finding different careers...' })
+
+  redoing.add(id)
+  try {
+    await redoPrediction({ userId: req.user.id, predictionId: id })
+  } catch (err) {
+    if (err instanceof PredictionError) return res.status(err.status).json({ message: err.message })
+    console.error('Redo prediction error:', err)
+    return res.status(500).json({ message: 'Could not redo prediction' })
+  } finally {
+    redoing.delete(id)
+  }
+
+  return sendPrediction(req, res, id)
+})
+
 // GET /api/predictions/:id/roadmap
 // Roadmap of the career the user selected. Optional: ?rank=1|2|3 to get a specific recommended career.
 router.get('/:id/roadmap', async (req, res) => {
@@ -349,7 +381,6 @@ router.patch('/:id/select', async (req, res) => {
 // DELETE /api/predictions/:id
 // Permanently deletes one of the user's predictions from the database:
 // its recommended careers, careers to avoid, insights and the saved assessment answers.
-// The shared career_roadmaps table is NOT touched (roadmaps are reused by every user).
 router.delete('/:id', async (req, res) => {
   const { id } = req.params
   if (!UUID_RE.test(id)) return res.status(404).json({ message: 'Prediction not found' })
